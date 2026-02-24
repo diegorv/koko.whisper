@@ -1,0 +1,54 @@
+[package]
+name = "koko-notes-whisper"
+version = "0.0.6-beta"
+description = "Voice transcription app for Portuguese-BR"
+authors = ["diegorv"]
+edition = "2021"
+
+[lib]
+name = "koko_notes_whisper_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Whisper transcription (Metal GPU on macOS)
+whisper-rs = { version = "0.14", features = ["metal"] }
+
+# Audio capture (fork with ScreenCaptureKit support for system audio on macOS)
+cpal = { git = "https://github.com/screenpipe/cpal.git", branch = "main" }
+
+# Audio resampling to 16kHz
+rubato = "0.15"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Model download
+reqwest = { version = "0.12", features = ["stream"] }
+futures = "0.3"
+
+# Timestamps
+chrono = "0.4"
+
+# Error handling
+anyhow = "1"
+log = "0.4"
+
+# WAV file I/O for audio persistence
+hound = "3.5"
+
+# macOS dirs
+dirs = "6"
+
+# Clipboard
+arboard = "3"
+

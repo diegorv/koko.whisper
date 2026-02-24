@@ -1,0 +1,264 @@
+name: Privacy Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "src-tauri/src/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "src-tauri/src/**"
+  workflow_dispatch:
+
+concurrency:
+  group: privacy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan-external-calls:
+    name: Scan for External Calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan TypeScript files for external calls
+        run: |
+          echo "Scanning .ts/.svelte/.js files for external network calls..."
+
+          # Patterns that indicate actual network calls
+          PATTERNS=(
+            # Native APIs
+            'fetch\s*\('
+            'XMLHttpRequest'
+            'navigator\.sendBeacon'
+            'WebSocket\s*\('
+            'EventSource\s*\('
+            '\.open\s*\(\s*["\x27](?:GET|POST|PUT|DELETE|PATCH)'
+            'RTCPeerConnection'
+            'navigator\.geolocation'
+            # External resource loading
+            'script\.src\s*='
+            'iframe\.src\s*='
+            'new\s+Image\s*\(.*\.src\s*='
+            'new\s+Worker\s*\('
+            'new\s+SharedWorker\s*\('
+            'ServiceWorker\.register'
+            # HTTP libraries (import/require)
+            'import.*\b(axios|got|node-fetch|ky|superagent|undici|needle|request)\b'
+            'require\s*\(\s*["\x27](axios|got|node-fetch|ky|superagent|undici|needle|request)["\x27]\)'
+            # External API clients
+            '@tauri-apps/plugin-http'
+            # Hardcoded URLs
+            'https?://'
+          )
+
+          SKIP=(
+            '\.test\.ts'
+            '\.spec\.ts'
+            'node_modules'
+            '\.svelte-kit/'
+            '\.d\.ts:'
+            'localhost'
+            '127\.0\.0\.1'
+            'tauri\.localhost'
+            'e2e/'
+            'privacy-ok'
+            # Comment lines (no network calls)
+            ':\s*//'
+            ':\s*\*'
+            ':\s*/\*'
+            # Non-network inline references
+            'w3\.org'
+            'example\.com'
+          )
+
+          # Known expected external calls (shown as notice, don't fail the build)
+          KNOWN=(
+          )
+
+          FOUND=0
+          SKIPPED_MATCHES=()
+          KNOWN_MATCHES=()
+          UNKNOWN_MATCHES=()
+          for pattern in "${PATTERNS[@]}"; do
+            while IFS= read -r match; do
+              SKIP_MATCH=false
+              for skip in "${SKIP[@]}"; do
+                if echo "$match" | grep -qE "$skip"; then
+                  SKIP_MATCH=true
+                  break
+                fi
+              done
+              if [ "$SKIP_MATCH" = true ]; then
+                SKIPPED_MATCHES+=("$match")
+                continue
+              fi
+
+              IS_KNOWN=false
+              for known in "${KNOWN[@]}"; do
+                if echo "$match" | grep -qE "$known"; then
+                  IS_KNOWN=true
+                  break
+                fi
+              done
+
+              if [ "$IS_KNOWN" = true ]; then
+                KNOWN_MATCHES+=("$match")
+              else
+                UNKNOWN_MATCHES+=("$match")
+              fi
+            done < <(grep -rnE "$pattern" --include='*.ts' --include='*.svelte' --include='*.js' src/ 2>/dev/null || true)
+          done
+
+          echo ""
+          echo "=== Results ==="
+
+          if [ ${#SKIPPED_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Skipped (${#SKIPPED_MATCHES[@]} matches excluded by skip rules):"
+            for m in "${SKIPPED_MATCHES[@]}"; do
+              echo "  --  $m"
+            done
+          fi
+
+          if [ ${#KNOWN_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Known (expected, not blocking):"
+            for m in "${KNOWN_MATCHES[@]}"; do
+              echo "  ok  $m"
+              echo "::notice::$m"
+            done
+          fi
+
+          if [ ${#UNKNOWN_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Unknown (blocking):"
+            for m in "${UNKNOWN_MATCHES[@]}"; do
+              echo "  !!  $m"
+              echo "::warning::$m"
+            done
+            echo ""
+            echo "Found ${#UNKNOWN_MATCHES[@]} unknown external call(s) in TypeScript/Svelte files."
+            echo "If a call is intentional, add it to the KNOWN list in this workflow or add '// privacy-ok' on the same line."
+            exit 1
+          fi
+
+          if [ ${#KNOWN_MATCHES[@]} -eq 0 ] && [ ${#SKIPPED_MATCHES[@]} -eq 0 ]; then
+            echo ""
+            echo "No external calls found."
+          fi
+
+      - name: Scan Rust files for external calls
+        run: |
+          echo "Scanning .rs files for external network calls..."
+
+          # Patterns that indicate actual network calls or HTTP client usage
+          PATTERNS=(
+            # HTTP clients
+            'reqwest'
+            'hyper::client'
+            'surf::'
+            'ureq::'
+            'curl::'
+            'attohttpc'
+            'isahc::'
+            'minreq::'
+            'awc::'
+            # gRPC
+            'tonic::transport'
+            # Raw networking
+            'TcpStream::connect'
+            'UdpSocket::connect'
+            # Hardcoded URLs
+            'https?://'
+          )
+
+          SKIP=(
+            '_test\.rs'
+            'tests/'
+            'target/'
+            'localhost'
+            '127\.0\.0\.1'
+            'privacy-ok'
+          )
+
+          # Known expected external calls (shown as notice, don't fail the build)
+          KNOWN=(
+            'huggingface\.co/ggerganov/whisper\.cpp'
+            'reqwest'
+          )
+
+          SKIPPED_MATCHES=()
+          KNOWN_MATCHES=()
+          UNKNOWN_MATCHES=()
+          for pattern in "${PATTERNS[@]}"; do
+            while IFS= read -r match; do
+              SKIP_MATCH=false
+              for skip in "${SKIP[@]}"; do
+                if echo "$match" | grep -qE "$skip"; then
+                  SKIP_MATCH=true
+                  break
+                fi
+              done
+              if [ "$SKIP_MATCH" = true ]; then
+                SKIPPED_MATCHES+=("$match")
+                continue
+              fi
+
+              IS_KNOWN=false
+              for known in "${KNOWN[@]}"; do
+                if echo "$match" | grep -qE "$known"; then
+                  IS_KNOWN=true
+                  break
+                fi
+              done
+
+              if [ "$IS_KNOWN" = true ]; then
+                KNOWN_MATCHES+=("$match")
+              else
+                UNKNOWN_MATCHES+=("$match")
+              fi
+            done < <(grep -rnE "$pattern" --include='*.rs' src-tauri/src/ 2>/dev/null || true)
+          done
+
+          echo ""
+          echo "=== Results ==="
+
+          if [ ${#SKIPPED_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Skipped (${#SKIPPED_MATCHES[@]} matches excluded by skip rules):"
+            for m in "${SKIPPED_MATCHES[@]}"; do
+              echo "  --  $m"
+            done
+          fi
+
+          if [ ${#KNOWN_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Known (expected, not blocking):"
+            for m in "${KNOWN_MATCHES[@]}"; do
+              echo "  ok  $m"
+              echo "::notice::$m"
+            done
+          fi
+
+          if [ ${#UNKNOWN_MATCHES[@]} -gt 0 ]; then
+            echo ""
+            echo "Unknown (blocking):"
+            for m in "${UNKNOWN_MATCHES[@]}"; do
+              echo "  !!  $m"
+              echo "::warning::$m"
+            done
+            echo ""
+            echo "Found ${#UNKNOWN_MATCHES[@]} unknown external call(s) in Rust files."
+            echo "If a call is intentional, add it to the KNOWN list in this workflow or add '// privacy-ok' on the same line."
+            exit 1
+          fi
+
+          if [ ${#KNOWN_MATCHES[@]} -eq 0 ] && [ ${#SKIPPED_MATCHES[@]} -eq 0 ]; then
+            echo ""
+            echo "No external calls found."
+          fi
