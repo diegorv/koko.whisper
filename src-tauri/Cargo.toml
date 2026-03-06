@@ -27,7 +27,7 @@ whisper-rs = { version = "0.14", features = ["metal"] }
 cpal = { git = "https://github.com/screenpipe/cpal.git", branch = "main" }
 
 # Audio resampling to 16kHz
-rubato = "0.15"
+rubato = "1.0"
 
 # Async
 tokio = { version = "1", features = ["full"] }
