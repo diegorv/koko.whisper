@@ -213,7 +213,7 @@ pub fn resample_to_16khz(samples: &[f32], from_rate: u32) -> Result<Vec<f32>> {
     }
 
     use rubato::{
-        Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType,
+        Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
         WindowFunction,
     };
 
@@ -225,15 +225,20 @@ pub fn resample_to_16khz(samples: &[f32], from_rate: u32) -> Result<Vec<f32>> {
         window: WindowFunction::BlackmanHarris2,
     };
 
-    let mut resampler = SincFixedIn::<f32>::new(
+    let mut resampler = Async::<f32>::new_sinc(
         16000.0 / from_rate as f64,
         2.0,
-        params,
+        &params,
         samples.len(),
         1,
+        FixedAsync::Input,
     )?;
 
-    let waves_in = vec![samples.to_vec()];
-    let waves_out = resampler.process(&waves_in, None)?;
-    Ok(waves_out.into_iter().next().unwrap())
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
+
+    let waves_in_data = vec![samples.to_vec()];
+    let waves_in = SequentialSliceOfVecs::new(&waves_in_data[..], 1, samples.len())
+        .map_err(|e| anyhow::anyhow!("Failed to create audio buffer: {}", e))?;
+    let waves_out = resampler.process(&waves_in, 0, None)?;
+    Ok(waves_out.take_data())
 }

@@ -47,14 +47,14 @@ pub fn transcribe(ctx: &WhisperContext, audio_data: &[f32]) -> Result<String> {
         .full(params, &audio)
         .map_err(|e| anyhow::anyhow!("Whisper transcription failed: {}", e))?;
 
-    let num_segments = state
-        .full_n_segments()
-        .map_err(|e| anyhow::anyhow!("Failed to get segments: {}", e))?;
+    let num_segments = state.full_n_segments();
 
     let mut transcript = String::new();
     for i in 0..num_segments {
-        if let Ok(text) = state.full_get_segment_text(i) {
-            transcript.push_str(&text);
+        if let Some(segment) = state.get_segment(i) {
+            if let Ok(text) = segment.to_str_lossy() {
+                transcript.push_str(&text);
+            }
         }
     }
 

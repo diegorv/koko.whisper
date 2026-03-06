@@ -51,4 +51,5 @@ dirs = "6"
 
 # Clipboard
 arboard = "3"
+audioadapter-buffers = "2.0.0"
 
