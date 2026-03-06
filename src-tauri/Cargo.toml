@@ -1,6 +1,6 @@
 [package]
 name = "koko-notes-whisper"
-version = "0.0.7-beta"
+version = "0.0.8-beta"
 description = "Voice transcription app for Portuguese-BR"
 authors = ["diegorv"]
 edition = "2021"
