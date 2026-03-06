@@ -7,9 +7,13 @@ A personal desktop voice transcription app powered by [Whisper](https://github.c
 All transcription runs locally on your Mac using the Whisper large-v3-turbo model with Metal GPU acceleration — no cloud, no API calls, privacy first. Built 100% with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with human review.
 
 > [!CAUTION]
-> This is a personal project under active development. Expect breaking changes, missing features, and rough edges.
-> **macOS only** — this app is built exclusively for macOS (Apple Silicon) and there are no plans to support other operating systems.
-> **We do not recommend using this for anything important.**
+> **EARLY STAGE SOFTWARE — DO NOT USE FOR ANYTHING IMPORTANT**
+>
+> This project is in a very early stage of development and is **not recommended for use by anyone**.
+> There is a real risk of **loss of recordings and transcriptions** made by the program. Do not rely on this software to preserve any important data.
+>
+> Expect breaking changes, missing features, and rough edges.
+> **macOS only** — built exclusively for macOS (Apple Silicon) with no plans to support other platforms.
 
 > [!WARNING]
 > **We are not accepting pull requests, issues, or external contributions at this time.**
