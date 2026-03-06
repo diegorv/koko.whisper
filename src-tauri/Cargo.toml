@@ -33,7 +33,7 @@ rubato = "0.15"
 tokio = { version = "1", features = ["full"] }
 
 # Model download
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.13", features = ["stream"] }
 futures = "0.3"
 
 # Timestamps
