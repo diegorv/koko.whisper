@@ -21,7 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Whisper transcription (Metal GPU on macOS)
-whisper-rs = { version = "0.14", features = ["metal"] }
+whisper-rs = { version = "0.15", features = ["metal"] }
 
 # Audio capture (fork with ScreenCaptureKit support for system audio on macOS)
 cpal = { git = "https://github.com/screenpipe/cpal.git", branch = "main" }
