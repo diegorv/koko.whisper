@@ -85,4 +85,7 @@ jobs:
           shared-key: "rust-tauri"
 
       - name: Run tests
+        env:
+          CFLAGS: "-mcpu=apple-m1"
+          CXXFLAGS: "-mcpu=apple-m1"
         run: cargo test --manifest-path src-tauri/Cargo.toml
