@@ -86,6 +86,7 @@ jobs:
 
       - name: Run tests
         env:
-          CFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
-          CXXFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CFLAGS: "-U__ARM_FEATURE_MATMUL_INT8 -mmacosx-version-min=11.0"
+          CXXFLAGS: "-U__ARM_FEATURE_MATMUL_INT8 -mmacosx-version-min=11.0"
         run: cargo test --manifest-path src-tauri/Cargo.toml

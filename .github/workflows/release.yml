@@ -82,8 +82,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_OPTIONS: "--max-old-space-size=4096"
-          CFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
-          CXXFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CFLAGS: "-U__ARM_FEATURE_MATMUL_INT8 -mmacosx-version-min=11.0"
+          CXXFLAGS: "-U__ARM_FEATURE_MATMUL_INT8 -mmacosx-version-min=11.0"
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
