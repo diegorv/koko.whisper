@@ -86,6 +86,6 @@ jobs:
 
       - name: Run tests
         env:
-          CFLAGS: "-mcpu=apple-m1"
-          CXXFLAGS: "-mcpu=apple-m1"
+          CFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
+          CXXFLAGS: "-U__ARM_FEATURE_MATMUL_INT8"
         run: cargo test --manifest-path src-tauri/Cargo.toml
