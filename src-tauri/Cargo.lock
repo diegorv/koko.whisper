@@ -2269,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "koko-notes-whisper"
-version = "0.0.9-beta"
+version = "0.0.10-beta"
 dependencies = [
  "anyhow",
  "arboard",

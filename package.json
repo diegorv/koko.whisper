@@ -1,7 +1,7 @@
 {
   "name": "koko-notes-whisper",
   "packageManager": "pnpm@10.27.0",
-  "version": "0.0.9-beta",
+  "version": "0.0.10-beta",
   "description": "",
   "type": "module",
   "scripts": {
