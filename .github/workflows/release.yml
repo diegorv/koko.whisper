@@ -32,7 +32,7 @@ jobs:
           echo "Validated: ${{ github.ref_name }} is on main branch"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
