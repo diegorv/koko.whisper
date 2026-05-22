@@ -1,7 +1,26 @@
+//! Whisper inference layer. Loads the ggml model into a
+//! `WhisperContext`, runs `transcribe()` against 16 kHz mono f32
+//! buffers, and post-processes the result to drop common Portuguese
+//! hallucinations (repetitive phrases and known filler prefixes /
+//! suffixes the model emits on noisy or very short audio).
+//!
+//! Model lifecycle (download, on-disk path) lives in `model/`.
+
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+/// Whisper expects audio in 16 kHz mono f32. Buffers shorter than one
+/// second cause whisper-rs to bail out (or silently return empty), so
+/// the caller pads them out with zeros before feeding the model.
+const MIN_AUDIO_SAMPLES_16KHZ: usize = 16_000;
+
+/// BCP-47-ish language tag whisper-rs uses to lock the decoder to
+/// Portuguese. The app is Portuguese-BR by design (see Cargo.toml's
+/// crate description) and the model is fine-tuned accordingly; an
+/// auto-detected `None` here regresses transcription quality.
+const WHISPER_LANGUAGE: &str = "pt";
 
 pub fn create_whisper_context(model_path: &Path) -> Result<Arc<WhisperContext>> {
     let mut ctx_params = WhisperContextParameters::default();
@@ -18,6 +37,17 @@ pub fn create_whisper_context(model_path: &Path) -> Result<Arc<WhisperContext>> 
     Ok(Arc::new(ctx))
 }
 
+/// Pure DSP helper. If `samples` is shorter than `min_samples`, return
+/// a copy padded with trailing zeros to reach that length; otherwise
+/// return the input as a `Vec<f32>` clone. Caller owns the buffer.
+fn pad_audio_to_min_length(samples: &[f32], min_samples: usize) -> Vec<f32> {
+    let mut padded = samples.to_vec();
+    if padded.len() < min_samples {
+        padded.resize(min_samples, 0.0);
+    }
+    padded
+}
+
 pub fn transcribe(ctx: &WhisperContext, audio_data: &[f32]) -> Result<String> {
     let mut state = ctx
         .create_state()
@@ -25,11 +55,7 @@ pub fn transcribe(ctx: &WhisperContext, audio_data: &[f32]) -> Result<String> {
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
 
-    // Pad short audio to at least 1 second
-    let mut audio = audio_data.to_vec();
-    if audio.len() < 16000 {
-        audio.resize(16000, 0.0);
-    }
+    let audio = pad_audio_to_min_length(audio_data, MIN_AUDIO_SAMPLES_16KHZ);
 
     params.set_n_threads(2);
     params.set_print_special(false);
@@ -37,7 +63,7 @@ pub fn transcribe(ctx: &WhisperContext, audio_data: &[f32]) -> Result<String> {
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     params.set_token_timestamps(false);
-    params.set_language(Some("pt"));
+    params.set_language(Some(WHISPER_LANGUAGE));
     params.set_translate(false);
     params.set_no_speech_thold(0.6);
     params.set_entropy_thold(2.4);
@@ -303,5 +329,48 @@ mod tests {
     fn test_strip_only_artifact_becomes_empty() {
         let result = strip_hallucination_artifacts("E aí");
         assert_eq!(result, "");
+    }
+
+    // --- pad_audio_to_min_length tests ---
+
+    #[test]
+    fn pad_audio_to_min_length_zero_pads_short_buffer() {
+        let input = vec![0.5f32, -0.5, 0.25];
+        let padded = pad_audio_to_min_length(&input, 8);
+        assert_eq!(padded.len(), 8);
+        assert_eq!(&padded[..3], &input[..]);
+        assert!(padded[3..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn pad_audio_to_min_length_returns_clone_when_buffer_already_meets_min() {
+        let input = vec![0.1f32; 16_000];
+        let padded = pad_audio_to_min_length(&input, MIN_AUDIO_SAMPLES_16KHZ);
+        assert_eq!(padded.len(), 16_000);
+        assert_eq!(padded, input);
+    }
+
+    #[test]
+    fn pad_audio_to_min_length_returns_clone_when_buffer_longer_than_min() {
+        let input = vec![0.1f32; 32_000];
+        let padded = pad_audio_to_min_length(&input, MIN_AUDIO_SAMPLES_16KHZ);
+        assert_eq!(padded.len(), 32_000);
+        assert_eq!(padded, input);
+    }
+
+    #[test]
+    fn min_audio_samples_pins_one_second_at_16khz() {
+        // 16,000 samples is the model's lower-bound "at least one
+        // second" threshold. Pin the value here so a refactor that
+        // bumps it accidentally to (say) 32_000 doesn't silently
+        // change empty-padding behavior on every short chunk.
+        assert_eq!(MIN_AUDIO_SAMPLES_16KHZ, 16_000);
+    }
+
+    #[test]
+    fn whisper_language_pinned_to_portuguese() {
+        // The app is Portuguese-BR by product design. Auto-detect
+        // regresses quality on short PT clips; pin the tag.
+        assert_eq!(WHISPER_LANGUAGE, "pt");
     }
 }
