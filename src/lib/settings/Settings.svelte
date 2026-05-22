@@ -234,6 +234,11 @@
     <label>Atalho</label>
     <p class="info">Cmd+Shift+R</p>
   </div>
+
+  <div class="setting-row">
+    <label>Versao</label>
+    <p class="info">{__BUILD_INFO__}</p>
+  </div>
 </div>
 
 <style>
