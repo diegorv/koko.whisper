@@ -42,9 +42,9 @@ pub fn run() {
             commands::recording::get_audio_levels,
             commands::settings::set_mic_enabled,
             commands::settings::set_sys_enabled,
-            commands::check_incomplete_sessions,
-            commands::recover_session,
-            commands::dismiss_session,
+            commands::session::check_incomplete_sessions,
+            commands::session::recover_session,
+            commands::session::dismiss_session,
             commands::get_app_status,
             commands::settings::get_settings,
         ])
