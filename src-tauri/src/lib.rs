@@ -29,9 +29,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            commands::check_model_status,
-            commands::download_model,
-            commands::initialize_whisper,
+            commands::model::check_model_status,
+            commands::model::download_model,
+            commands::model::initialize_whisper,
             commands::recording::start_recording,
             commands::recording::stop_recording,
             commands::transcriptions::get_transcriptions,
