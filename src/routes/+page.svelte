@@ -1,10 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { goto } from "$app/navigation";
   import { onMount } from "svelte";
-  import RecordingView from "$lib/RecordingView.svelte";
-  import TranscriptionList from "$lib/TranscriptionList.svelte";
-  import Settings from "$lib/Settings.svelte";
+  import RecordingView from "$lib/recording/RecordingView.svelte";
+  import TranscriptionList from "$lib/transcriptions/TranscriptionList.svelte";
 
   interface IncompleteSession {
     session_id: string;
@@ -17,7 +17,6 @@
   let modelReady = $state(false);
   let downloadProgress = $state(0);
   let downloading = $state(false);
-  let currentView: "main" | "settings" = $state("main");
   let initError = $state("");
   let incompleteSessions: IncompleteSession[] = $state([]);
   let recovering = $state(false);
@@ -99,8 +98,6 @@
     <div class="loading-screen">
       <p>Carregando modelo...</p>
     </div>
-  {:else if currentView === "settings"}
-    <Settings onBack={() => (currentView = "main")} />
   {:else}
     {#if incompleteSessions.length > 0}
       <div class="recovery-banner">
@@ -135,7 +132,7 @@
     <RecordingView />
     <TranscriptionList />
     <div class="footer">
-      <button class="settings-btn" onclick={() => (currentView = "settings")}>
+      <button class="settings-btn" onclick={() => goto("/settings")}>
         Configuracoes
       </button>
     </div>
