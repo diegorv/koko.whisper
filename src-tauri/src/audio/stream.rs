@@ -73,6 +73,7 @@ impl AudioCapture {
                 log::error!("Audio stream error: {}", err);
             },
             None,
+            None,
         )?;
 
         stream.play()?;
