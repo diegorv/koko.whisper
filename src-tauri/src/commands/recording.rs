@@ -208,7 +208,7 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
     };
 
     for track_name in &track_names {
-        match crate::process_track_chunk(app, *track_name).await {
+        match crate::pipeline::process_track_chunk(app, *track_name).await {
             Ok(_) => {}
             Err(e) => {
                 eprintln!(
