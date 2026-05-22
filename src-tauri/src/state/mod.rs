@@ -145,3 +145,80 @@ impl AppState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn track_name_display_uses_lowercase_words() {
+        assert_eq!(TrackName::Microphone.to_string(), "microphone");
+        assert_eq!(TrackName::System.to_string(), "system");
+    }
+
+    #[test]
+    fn track_name_from_str_parses_lowercase_words() {
+        assert_eq!(TrackName::from_str("microphone").unwrap(), TrackName::Microphone);
+        assert_eq!(TrackName::from_str("system").unwrap(), TrackName::System);
+    }
+
+    #[test]
+    fn track_name_from_str_rejects_unknown() {
+        assert!(TrackName::from_str("speaker").is_err());
+        assert!(TrackName::from_str("").is_err());
+        assert!(TrackName::from_str("Microphone").is_err()); // case-sensitive
+    }
+
+    #[test]
+    fn track_name_display_and_from_str_round_trip() {
+        for track in [TrackName::Microphone, TrackName::System] {
+            let s = track.to_string();
+            assert_eq!(TrackName::from_str(&s).unwrap(), track);
+        }
+    }
+
+    #[test]
+    fn track_name_display_label_pinned_per_variant() {
+        // Pin the Portuguese-BR labels rendered in transcript headers.
+        // A drift in either string changes user-visible markdown output
+        // and breaks the multi-track aggregate format documented in
+        // CONTEXT.md ("Transcription").
+        assert_eq!(TrackName::Microphone.display_label(), "Eu (Microfone)");
+        assert_eq!(
+            TrackName::System.display_label(),
+            "Participante (Audio do Sistema)"
+        );
+    }
+
+    #[test]
+    fn track_name_serde_uses_lowercase_words() {
+        // The persisted session manifest stores track names as strings
+        // (see session::SessionChunk.track). Pin the wire format so a
+        // future rename of the enum variants does not invalidate
+        // existing manifests on disk.
+        let json = serde_json::to_string(&TrackName::Microphone).unwrap();
+        assert_eq!(json, "\"microphone\"");
+
+        let parsed: TrackName = serde_json::from_str("\"system\"").unwrap();
+        assert_eq!(parsed, TrackName::System);
+    }
+
+    #[test]
+    fn status_constants_have_distinct_values_starting_at_idle_zero() {
+        // The tray + UI compare these constants via plain integer
+        // equality on an AtomicU8. Pin their values so a reorder does
+        // not silently move "recording" to a different bit pattern.
+        assert_eq!(STATUS_IDLE, 0);
+        assert_eq!(STATUS_RECORDING, 1);
+        assert_eq!(STATUS_TRANSCRIBING, 2);
+
+        // Distinctness invariant.
+        let codes = [STATUS_IDLE, STATUS_RECORDING, STATUS_TRANSCRIBING];
+        for (i, a) in codes.iter().enumerate() {
+            for b in &codes[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+    }
+}
