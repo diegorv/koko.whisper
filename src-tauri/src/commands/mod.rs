@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 
+pub mod model;
 pub mod recording;
 pub mod settings;
 pub mod transcriptions;
@@ -17,34 +18,6 @@ pub mod transcriptions;
 pub use recording::toggle_recording_impl;
 
 use recording::{build_transcript, copy_to_clipboard, save_markdown};
-
-// --- Model ---
-
-#[tauri::command]
-pub async fn check_model_status() -> Result<bool, String> {
-    Ok(crate::model::is_model_downloaded())
-}
-
-#[tauri::command]
-pub async fn download_model(app: AppHandle) -> Result<(), String> {
-    let app_clone = app.clone();
-    crate::model::download_model(move |progress| {
-        let _ = app_clone.emit("model-download-progress", progress);
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn initialize_whisper(state: State<'_, AppState>) -> Result<(), String> {
-    let model_path = crate::model::get_model_path().map_err(|e| e.to_string())?;
-    let ctx =
-        crate::transcription::create_whisper_context(&model_path).map_err(|e| e.to_string())?;
-    let mut guard = state.whisper_context.lock().await;
-    *guard = Some(ctx);
-    Ok(())
-}
 
 /// Returns (status, elapsed_seconds) for frontend to sync on mount.
 #[tauri::command]
