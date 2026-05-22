@@ -1,3 +1,9 @@
+//! macOS menubar (tray) UI. Bridges runtime AppState into the Tauri
+//! tray menu, title, and tooltip. The pure rendering — turning the
+//! current status / track-enabled flags / elapsed timer into the
+//! exact user-visible strings — is split out as standalone functions
+//! so the strings are unit-testable without a Tauri AppHandle.
+
 use crate::state::{AppState, TrackName, STATUS_RECORDING, STATUS_TRANSCRIBING};
 use std::sync::atomic::Ordering;
 use tauri::{
@@ -65,31 +71,60 @@ fn format_elapsed(d: std::time::Duration) -> String {
     }
 }
 
-/// Builds the tray menu with recording controls and track toggles.
-fn build_menu(app: &AppHandle, info: &TrayInfo) -> anyhow::Result<Menu<Wry>> {
-    let (status_text, toggle_label, toggle_enabled) = match info.status {
+/// Pure. The first menu row's label — recording status with a live
+/// timer when active, otherwise a stable string.
+fn build_status_text(info: &TrayInfo) -> String {
+    match info.status {
         STATUS_RECORDING => {
             let timer = info
                 .elapsed
                 .map(format_elapsed)
                 .unwrap_or_else(|| "00:00".to_string());
-            (
-                format!("● Gravando...  {}", timer),
-                "Parar Gravacao (Cmd+Shift+R)".to_string(),
-                true,
-            )
+            format!("● Gravando...  {}", timer)
         }
-        STATUS_TRANSCRIBING => (
-            "Transcrevendo...".to_string(),
-            "Aguarde...".to_string(),
-            false,
+        STATUS_TRANSCRIBING => "Transcrevendo...".to_string(),
+        _ => "Parado".to_string(),
+    }
+}
+
+/// Pure. The toggle row's (label, enabled) pair. The toggle is
+/// disabled mid-transcription because the user cannot start or stop a
+/// recording while whisper-rs is consuming the previous one.
+fn build_toggle(status: u8) -> (String, bool) {
+    match status {
+        STATUS_RECORDING => ("Parar Gravacao (Cmd+Shift+R)".to_string(), true),
+        STATUS_TRANSCRIBING => ("Aguarde...".to_string(), false),
+        _ => ("Iniciar Gravacao (Cmd+Shift+R)".to_string(), true),
+    }
+}
+
+/// Pure. The tray title shown next to the menubar icon. None means
+/// "no title, icon only" — what we render when idle.
+fn build_tray_title(info: &TrayInfo) -> Option<String> {
+    match info.status {
+        STATUS_RECORDING => Some(
+            info.elapsed
+                .map(format_elapsed)
+                .unwrap_or_else(|| "00:00".to_string()),
         ),
-        _ => (
-            "Parado".to_string(),
-            "Iniciar Gravacao (Cmd+Shift+R)".to_string(),
-            true,
-        ),
-    };
+        STATUS_TRANSCRIBING => Some("...".to_string()),
+        _ => None,
+    }
+}
+
+/// Pure. The hover tooltip on the tray icon.
+fn build_tray_tooltip(status: u8) -> &'static str {
+    match status {
+        STATUS_RECORDING => "Koko Notes Whisper - Gravando...",
+        STATUS_TRANSCRIBING => "Koko Notes Whisper - Transcrevendo...",
+        _ => "Koko Notes Whisper",
+    }
+}
+
+/// Builds the tray menu with recording controls and track toggles.
+fn build_menu(app: &AppHandle, info: &TrayInfo) -> anyhow::Result<Menu<Wry>> {
+    let status_text = build_status_text(info);
+    let (toggle_label, toggle_enabled) = build_toggle(info.status);
 
     let status = MenuItem::with_id(app, "status", &status_text, false, None::<&str>)?;
     let toggle = MenuItem::with_id(
@@ -219,25 +254,8 @@ pub fn update_tray_title(app: &AppHandle) {
 }
 
 fn apply_tray_decorations(tray: &tauri::tray::TrayIcon, info: &TrayInfo) {
-    let title = match info.status {
-        STATUS_RECORDING => {
-            let timer = info
-                .elapsed
-                .map(format_elapsed)
-                .unwrap_or_else(|| "00:00".to_string());
-            Some(timer)
-        }
-        STATUS_TRANSCRIBING => Some("...".to_string()),
-        _ => None,
-    };
-    let _ = tray.set_title(title.as_deref());
-
-    let tooltip = match info.status {
-        STATUS_RECORDING => "Koko Notes Whisper - Gravando...",
-        STATUS_TRANSCRIBING => "Koko Notes Whisper - Transcrevendo...",
-        _ => "Koko Notes Whisper",
-    };
-    let _ = tray.set_tooltip(Some(tooltip));
+    let _ = tray.set_title(build_tray_title(info).as_deref());
+    let _ = tray.set_tooltip(Some(build_tray_tooltip(info.status)));
 }
 
 fn show_panel(app: &AppHandle) {
@@ -260,7 +278,17 @@ fn show_panel(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::STATUS_IDLE;
     use std::time::Duration;
+
+    fn info(status: u8, elapsed: Option<Duration>) -> TrayInfo {
+        TrayInfo {
+            status,
+            mic_enabled: true,
+            sys_enabled: false,
+            elapsed,
+        }
+    }
 
     #[test]
     fn test_format_elapsed_zero() {
@@ -287,5 +315,92 @@ mod tests {
         assert_eq!(format_elapsed(Duration::from_secs(3661)), "01:01:01");
         assert_eq!(format_elapsed(Duration::from_secs(7200)), "02:00:00");
         assert_eq!(format_elapsed(Duration::from_secs(36000)), "10:00:00");
+    }
+
+    #[test]
+    fn build_status_text_idle_says_parado() {
+        assert_eq!(build_status_text(&info(STATUS_IDLE, None)), "Parado");
+    }
+
+    #[test]
+    fn build_status_text_recording_with_timer_renders_dot_and_elapsed() {
+        let s = build_status_text(&info(STATUS_RECORDING, Some(Duration::from_secs(65))));
+        assert_eq!(s, "● Gravando...  01:05");
+    }
+
+    #[test]
+    fn build_status_text_recording_without_timer_renders_zero_zero() {
+        // recording_started_at may be None for a few ticks at the very
+        // start of a recording. Show 00:00 rather than collapsing the
+        // status row.
+        let s = build_status_text(&info(STATUS_RECORDING, None));
+        assert_eq!(s, "● Gravando...  00:00");
+    }
+
+    #[test]
+    fn build_status_text_transcribing_says_transcrevendo() {
+        assert_eq!(
+            build_status_text(&info(STATUS_TRANSCRIBING, None)),
+            "Transcrevendo..."
+        );
+    }
+
+    #[test]
+    fn build_toggle_idle_returns_iniciar_label_enabled() {
+        let (label, enabled) = build_toggle(STATUS_IDLE);
+        assert_eq!(label, "Iniciar Gravacao (Cmd+Shift+R)");
+        assert!(enabled);
+    }
+
+    #[test]
+    fn build_toggle_recording_returns_parar_label_enabled() {
+        let (label, enabled) = build_toggle(STATUS_RECORDING);
+        assert_eq!(label, "Parar Gravacao (Cmd+Shift+R)");
+        assert!(enabled);
+    }
+
+    #[test]
+    fn build_toggle_transcribing_returns_aguarde_label_disabled() {
+        // Disabled mid-transcription: user cannot start/stop recording
+        // while whisper-rs is busy on the previous capture.
+        let (label, enabled) = build_toggle(STATUS_TRANSCRIBING);
+        assert_eq!(label, "Aguarde...");
+        assert!(!enabled);
+    }
+
+    #[test]
+    fn build_tray_title_idle_returns_none_icon_only() {
+        assert!(build_tray_title(&info(STATUS_IDLE, None)).is_none());
+    }
+
+    #[test]
+    fn build_tray_title_recording_returns_timer_string() {
+        let t = build_tray_title(&info(STATUS_RECORDING, Some(Duration::from_secs(125))));
+        assert_eq!(t.as_deref(), Some("02:05"));
+    }
+
+    #[test]
+    fn build_tray_title_recording_without_timer_returns_zero_zero() {
+        let t = build_tray_title(&info(STATUS_RECORDING, None));
+        assert_eq!(t.as_deref(), Some("00:00"));
+    }
+
+    #[test]
+    fn build_tray_title_transcribing_returns_ellipsis() {
+        let t = build_tray_title(&info(STATUS_TRANSCRIBING, None));
+        assert_eq!(t.as_deref(), Some("..."));
+    }
+
+    #[test]
+    fn build_tray_tooltip_per_status() {
+        assert_eq!(build_tray_tooltip(STATUS_IDLE), "Koko Notes Whisper");
+        assert_eq!(
+            build_tray_tooltip(STATUS_RECORDING),
+            "Koko Notes Whisper - Gravando..."
+        );
+        assert_eq!(
+            build_tray_tooltip(STATUS_TRANSCRIBING),
+            "Koko Notes Whisper - Transcrevendo..."
+        );
     }
 }
