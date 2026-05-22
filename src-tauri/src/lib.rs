@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod model;
 mod session;
+mod shortcuts;
 mod state;
 mod transcription;
 mod tray;
@@ -10,7 +11,6 @@ mod tray;
 use state::{AppState, TrackName};
 use std::sync::atomic::Ordering;
 use tauri::{Emitter, Manager};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tokio::sync::mpsc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -52,17 +52,8 @@ pub fn run() {
             // Setup tray menu
             tray::setup_tray(app.handle())?;
 
-            // Register global shortcut: Cmd+Shift+R
-            let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
-            let app_handle = app.handle().clone();
-            app.handle().global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    let h = app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        commands::toggle_recording_impl(&h).await;
-                    });
-                }
-            })?;
+            // Register global keyboard shortcuts (Cmd+Shift+R toggles recording).
+            shortcuts::register(app.handle())?;
 
             // Start audio capture for all tracks
             setup_audio_capture(app.handle());
