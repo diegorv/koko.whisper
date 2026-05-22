@@ -34,7 +34,7 @@ pub fn run() {
             commands::initialize_whisper,
             commands::recording::start_recording,
             commands::recording::stop_recording,
-            commands::get_transcriptions,
+            commands::transcriptions::get_transcriptions,
             commands::set_output_folder,
             commands::list_audio_devices,
             commands::set_mic_device,

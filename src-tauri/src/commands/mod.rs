@@ -7,14 +7,14 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 
 pub mod recording;
+pub mod transcriptions;
 
 // `toggle_recording_impl` is invoked from `tray::handle_menu_event` and
 // `shortcuts::register` via `crate::commands::toggle_recording_impl(...)`,
-// so the re-export must live here. The Tauri command functions
-// (`start_recording`, `stop_recording`, `get_audio_levels`) are NOT
+// so the re-export must live here. The Tauri command functions are NOT
 // re-exported because `tauri::generate_handler!` cannot follow re-exports
 // — it needs both the fn and the `__cmd__<name>` macro shim at the same
-// path. lib.rs references them via the full `commands::recording::*` path.
+// path. lib.rs references them via the full `commands::<submod>::*` path.
 pub use recording::toggle_recording_impl;
 
 use recording::{build_transcript, copy_to_clipboard, save_markdown};
@@ -162,52 +162,6 @@ pub async fn set_sys_enabled(
     crate::tray::update_tray_menu(&app);
     save_current_config(&state).await;
     Ok(device)
-}
-
-// --- Transcriptions ---
-
-#[derive(serde::Serialize, Clone)]
-pub struct TranscriptionEntry {
-    pub filename: String,
-    pub preview: String,
-    pub path: String,
-}
-
-#[tauri::command]
-pub async fn get_transcriptions(
-    state: State<'_, AppState>,
-) -> Result<Vec<TranscriptionEntry>, String> {
-    let output_folder = state.output_folder.lock().await.clone();
-    let mut entries = Vec::new();
-
-    if output_folder.exists() {
-        let mut paths: Vec<_> = std::fs::read_dir(&output_folder)
-            .map_err(|e| e.to_string())?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
-            .collect();
-        paths.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
-
-        for entry in paths.iter().take(20) {
-            let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
-            // Extract text after the "---" separator and truncate for preview
-            let preview = content
-                .split("---")
-                .nth(1)
-                .unwrap_or(&content)
-                .trim()
-                .chars()
-                .take(150)
-                .collect::<String>();
-            entries.push(TranscriptionEntry {
-                filename: entry.file_name().to_string_lossy().to_string(),
-                preview,
-                path: entry.path().to_string_lossy().to_string(),
-            });
-        }
-    }
-
-    Ok(entries)
 }
 
 // --- Model ---
