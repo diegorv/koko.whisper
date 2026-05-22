@@ -10,12 +10,13 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # pnpm 10 matches the `packageManager` field in package.json. Bump
-    # both in lock-step when moving to pnpm 11+.
+    # pnpm version is pinned by the `packageManager` field in
+    # package.json (`pnpm@10.27.0`). `pnpm/action-setup` errors out
+    # with ERR_PNPM_BAD_PM_VERSION when both `inputs.version` and a
+    # `packageManager` spec are present, so we deliberately omit
+    # `with: version`. Bump `packageManager` in package.json to move.
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
-      with:
-        version: 10
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
