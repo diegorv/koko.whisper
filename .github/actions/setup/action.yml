@@ -1,0 +1,39 @@
+name: "Setup Environment"
+description: "Setup pnpm, Node.js, Rust, and dependency caching for koko-notes-whisper CI"
+
+inputs:
+  rust:
+    description: "Install Rust toolchain (set 'false' for frontend-only jobs)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    # pnpm 10 matches the `packageManager` field in package.json. Bump
+    # both in lock-step when moving to pnpm 11+.
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: "22"
+        cache: "pnpm"
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Setup Rust
+      if: inputs.rust == 'true'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies and build artifacts
+      if: inputs.rust == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        shared-key: "rust-tauri"
