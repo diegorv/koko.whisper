@@ -28,6 +28,15 @@ pub fn run() {
                 // would let an old 480x320 state override the new
                 // compact size on next launch.
                 .with_denylist(&[windows::RECORDING])
+                // Persist size + position only; we do NOT want the
+                // plugin to restore window visibility, otherwise
+                // closing Settings between sessions would re-open
+                // it on next launch (or on the activation flip
+                // that fires when stopping a recording).
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION,
+                )
                 .build(),
         )
         .manage(AppState::new(config::load_config()))
