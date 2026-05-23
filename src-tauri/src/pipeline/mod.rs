@@ -178,6 +178,7 @@ pub fn start(app: &tauri::AppHandle) {
             let rt = tokio::runtime::Runtime::new().unwrap();
 
             rt.block_on(async move {
+                let mut last_failure: Option<String> = None;
                 loop {
                     let selected = { device.lock().await.clone() };
                     let is_enabled = enabled.load(Ordering::Relaxed);
@@ -194,6 +195,7 @@ pub fn start(app: &tauri::AppHandle) {
                             }
                         );
                         let _ = change_rx.changed().await;
+                        last_failure = None;
                         continue;
                     }
 
@@ -217,6 +219,7 @@ pub fn start(app: &tauri::AppHandle) {
                                 "[audio:{}] Capture started: device={:?}, rate={}",
                                 name, selected, capture.sample_rate
                             );
+                            last_failure = None;
 
                             // Keep stream alive
                             let (stream_tx, stream_rx) = std::sync::mpsc::channel();
@@ -229,8 +232,25 @@ pub fn start(app: &tauri::AppHandle) {
                             drop(stream_rx);
                         }
                         Err(e) => {
-                            eprintln!("[audio:{}] Failed to start: {}", name, e);
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            let msg = e.to_string();
+                            // Log only when the failure mode changes,
+                            // so a disconnected configured device does
+                            // not flood the log with the same line
+                            // every 30s.
+                            if last_failure.as_deref() != Some(&msg) {
+                                eprintln!("[audio:{}] Failed to start: {}", name, msg);
+                                last_failure = Some(msg);
+                            }
+                            // Long back-off + react instantly when the
+                            // user changes the device in Settings:
+                            // whichever fires first wins.
+                            let timeout =
+                                tokio::time::sleep(std::time::Duration::from_secs(30));
+                            tokio::pin!(timeout);
+                            tokio::select! {
+                                _ = &mut timeout => {}
+                                _ = change_rx.changed() => {}
+                            }
                         }
                     }
                 }
