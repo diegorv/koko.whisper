@@ -48,7 +48,7 @@
 
   .transcription-list h3 {
     font-size: 12px;
-    color: #666;
+    color: var(--text-muted);
     margin: 0 0 8px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -58,29 +58,30 @@
     display: block;
     width: 100%;
     padding: 10px 12px;
-    background: #222;
-    border: 1px solid transparent;
-    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     margin-bottom: 6px;
     cursor: pointer;
     text-align: left;
     font-family: inherit;
+    color: inherit;
   }
 
   .entry:hover {
-    border-color: #444;
-    background: #2a2a2a;
+    border-color: var(--accent-border);
+    background: var(--accent-bg);
   }
 
   .filename {
     font-size: 11px;
-    color: #555;
-    font-family: monospace;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
   }
 
   .preview {
     font-size: 13px;
-    color: #aaa;
+    color: var(--text-muted);
     margin: 4px 0 0 0;
     line-height: 1.4;
   }

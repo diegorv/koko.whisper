@@ -232,8 +232,8 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    border: 3px solid #444;
-    background: #2a2a2a;
+    border: 3px solid var(--border-strong);
+    background: var(--surface-raised);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -242,7 +242,7 @@
   }
 
   .record-btn:hover {
-    border-color: #666;
+    border-color: var(--accent-border);
   }
 
   .record-btn.recording {
@@ -250,7 +250,7 @@
   }
 
   .record-btn.processing {
-    border-color: #4a9eff;
+    border-color: var(--accent);
     opacity: 0.7;
     cursor: wait;
   }
@@ -295,23 +295,23 @@
 
   .status {
     font-size: 13px;
-    color: #888;
+    color: var(--text-muted);
     margin-top: 8px;
     text-align: center;
   }
 
   .hint {
     font-size: 11px;
-    color: #666;
+    color: var(--text-faint);
   }
 
   .partial-transcript {
     margin-top: 20px;
     width: 100%;
     padding: 12px;
-    background: #1e2a1e;
-    border: 1px solid #2a3a2a;
-    border-radius: 8px;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-lg);
     box-sizing: border-box;
     max-height: 300px;
     overflow-y: auto;
@@ -319,7 +319,7 @@
 
   .partial-transcript h3 {
     font-size: 12px;
-    color: #6a6;
+    color: var(--accent);
     margin: 0 0 8px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -329,7 +329,7 @@
     font-size: 14px;
     line-height: 1.5;
     margin: 0;
-    color: #ccc;
+    color: var(--text);
   }
 
   .track-section {
@@ -347,32 +347,25 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 2px 6px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     margin-bottom: 4px;
-  }
-
-  .track-label.mic {
-    background: #2a3a2a;
-    color: #8c8;
-  }
-
-  .track-label.sys {
-    background: #2a2a3a;
-    color: #88c;
+    background: var(--surface-raised);
+    color: var(--text-muted);
   }
 
   .last-transcription {
     margin-top: 20px;
     width: 100%;
     padding: 12px;
-    background: #222;
-    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
     box-sizing: border-box;
   }
 
   .last-transcription h3 {
     font-size: 12px;
-    color: #666;
+    color: var(--text-muted);
     margin: 0 0 8px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -382,6 +375,6 @@
     font-size: 14px;
     line-height: 1.5;
     margin: 0;
-    color: #ccc;
+    color: var(--text);
   }
 </style>

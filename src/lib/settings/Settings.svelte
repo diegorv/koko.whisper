@@ -260,16 +260,16 @@
 
   .back-btn {
     background: none;
-    border: 1px solid #444;
-    color: #ccc;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 13px;
   }
 
   .back-btn:hover {
-    border-color: #666;
+    border-color: var(--accent-border);
   }
 
   .setting-row {
@@ -288,9 +288,9 @@
   }
 
   .toggle {
-    background: #333;
-    border: 1px solid #444;
-    color: #888;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
     padding: 2px 10px;
     border-radius: 10px;
     cursor: pointer;
@@ -299,11 +299,11 @@
   }
 
   .toggle:hover {
-    border-color: #555;
+    border-color: var(--accent-border);
   }
 
   .toggle.active {
-    background: #1a3a1a;
+    background: rgba(46, 204, 113, 0.15);
     border-color: #2ecc71;
     color: #2ecc71;
   }
@@ -316,7 +316,7 @@
   .setting-row label {
     display: block;
     font-size: 12px;
-    color: #666;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 6px;
@@ -324,22 +324,22 @@
 
   .device-select {
     width: 100%;
-    background: #222;
-    border: 1px solid #333;
-    color: #ccc;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     padding: 8px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 13px;
     cursor: pointer;
   }
 
   .device-select:hover {
-    border-color: #555;
+    border-color: var(--accent-border);
   }
 
   .vu-meter {
     height: 4px;
-    background: #1a1a1a;
+    background: var(--surface-sunken);
     border-radius: 2px;
     margin-top: 6px;
     overflow: hidden;
@@ -354,7 +354,7 @@
 
   .hint {
     font-size: 11px;
-    color: #555;
+    color: var(--text-faint);
     margin: 6px 0 0 0;
   }
 
@@ -365,34 +365,35 @@
 
   .folder-picker input {
     flex: 1;
-    background: #222;
-    border: 1px solid #333;
-    color: #ccc;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     padding: 8px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 12px;
-    font-family: monospace;
+    font-family: var(--font-mono);
   }
 
   .folder-picker button {
-    background: #333;
-    border: 1px solid #444;
-    color: #ccc;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     padding: 8px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 13px;
     white-space: nowrap;
   }
 
   .folder-picker button:hover {
-    background: #444;
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
   }
 
   .info {
     font-size: 13px;
-    color: #aaa;
+    color: var(--text-muted);
     margin: 0;
-    font-family: monospace;
+    font-family: var(--font-mono);
   }
 </style>

@@ -140,17 +140,8 @@
 </main>
 
 <style>
-  :global(body) {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: #1a1a1a;
-    color: #e0e0e0;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
   main {
-    padding: 16px;
+    padding: var(--space-4);
     min-height: 100vh;
     box-sizing: border-box;
   }
@@ -174,7 +165,7 @@
 
   .model-name {
     font-size: 12px;
-    color: #888;
+    color: var(--text-muted);
     margin: 0;
   }
 
@@ -182,26 +173,26 @@
     width: 100%;
     max-width: 280px;
     height: 6px;
-    background: #333;
+    background: var(--surface-raised);
     border-radius: 3px;
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 3px;
     transition: width 0.3s ease;
   }
 
   .progress-text {
     font-size: 13px;
-    color: #888;
+    color: var(--text-muted);
     margin: 0;
   }
 
   .error-screen {
-    color: #ff6b6b;
+    color: var(--danger);
   }
 
   .error-icon {
@@ -211,42 +202,42 @@
   }
 
   .footer {
-    margin-top: 16px;
+    margin-top: var(--space-4);
     text-align: center;
   }
 
   .settings-btn {
     background: none;
-    border: 1px solid #444;
-    color: #888;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
     padding: 6px 16px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 13px;
   }
 
   .settings-btn:hover {
-    border-color: #666;
-    color: #ccc;
+    border-color: var(--accent-border);
+    color: var(--text);
   }
 
   .recovery-banner {
-    background: #2a2218;
-    border: 1px solid #4a3a20;
-    border-radius: 8px;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-lg);
     padding: 12px;
     margin-bottom: 16px;
   }
 
   .recovery-banner h3 {
     font-size: 13px;
-    color: #d4a040;
+    color: var(--warning);
     margin: 0 0 8px 0;
   }
 
   .recovery-item p {
     font-size: 12px;
-    color: #aaa;
+    color: var(--text-muted);
     margin: 0 0 8px 0;
   }
 
@@ -256,17 +247,17 @@
   }
 
   .recover-btn {
-    background: #3a5a3a;
-    border: 1px solid #4a6a4a;
-    color: #ccc;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
     padding: 6px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 12px;
   }
 
   .recover-btn:hover {
-    background: #4a6a4a;
+    background: var(--accent-bg-strong);
   }
 
   .recover-btn:disabled {
@@ -275,16 +266,17 @@
   }
 
   .dismiss-btn {
-    background: #3a2a2a;
-    border: 1px solid #4a3a3a;
-    color: #999;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
     padding: 6px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 12px;
   }
 
   .dismiss-btn:hover {
-    background: #4a3a3a;
+    background: var(--surface-raised);
+    color: var(--text);
   }
 </style>
