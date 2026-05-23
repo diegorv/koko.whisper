@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount, onDestroy } from "svelte";
   import { createModelStatus } from "$lib/model-status.svelte";
 
@@ -13,21 +14,12 @@
   let isProcessing = $state(false);
   let statusText = $state("");
   let startError = $state<string | null>(null);
-  let micTranscript = $state("");
-  let sysTranscript = $state("");
   let chunkCount = $state(0);
   let elapsedSeconds = $state(0);
   let timerInterval: ReturnType<typeof setInterval> | null = null;
 
   const model = createModelStatus();
   let modelReady = $derived(model.current.kind === "ready");
-
-  let hasPartialTranscript = $derived(
-    micTranscript.length > 0 || sysTranscript.length > 0,
-  );
-  let hasBothTracks = $derived(
-    micTranscript.length > 0 && sysTranscript.length > 0,
-  );
 
   let unlisteners: (() => void)[] = [];
 
@@ -37,9 +29,7 @@
     const s = totalSeconds % 60;
     const mm = String(m).padStart(2, "0");
     const ss = String(s).padStart(2, "0");
-    if (h > 0) {
-      return `${h}:${mm}:${ss}`;
-    }
+    if (h > 0) return `${h}:${mm}:${ss}`;
     return `${mm}:${ss}`;
   }
 
@@ -77,8 +67,6 @@
         isRecording = true;
         isProcessing = false;
         startError = null;
-        micTranscript = "";
-        sysTranscript = "";
         chunkCount = 0;
         startTimer();
       }),
@@ -90,8 +78,6 @@
         isProcessing = false;
         stopTimer();
         statusText = "";
-        micTranscript = "";
-        sysTranscript = "";
         chunkCount = 0;
       }),
     );
@@ -103,30 +89,18 @@
           isRecording = false;
           isProcessing = true;
           stopTimer();
-          statusText = "Processing audio…";
+          statusText = "Processing…";
         } else if (p === "transcribing") {
           statusText = "Transcribing…";
         } else if (p === "recovering") {
-          statusText = "Recovering session…";
-        } else if (p.startsWith("transcribing")) {
-          statusText = "Transcribing chunk…";
+          statusText = "Recovering…";
         }
       }),
     );
 
     unlisteners.push(
-      await listen<ChunkEvent>("chunk-transcribed", (event) => {
-        const { track, transcript } = event.payload;
+      await listen<ChunkEvent>("chunk-transcribed", () => {
         chunkCount++;
-        if (track === "microphone") {
-          micTranscript = micTranscript
-            ? micTranscript + " " + transcript
-            : transcript;
-        } else if (track === "system") {
-          sysTranscript = sysTranscript
-            ? sysTranscript + " " + transcript
-            : transcript;
-        }
       }),
     );
   });
@@ -143,6 +117,22 @@
     } catch (e) {
       startError = String(e);
     }
+  }
+
+  // Manual drag handler. The `data-tauri-drag-region` attribute is
+  // unreliable on macOS frameless+transparent windows; calling
+  // `startDragging()` on pointerdown is the workaround that works
+  // both ways. Skipped when the event target is interactive so the
+  // record button keeps receiving its click.
+  function onPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("button, input, textarea, a, [role='button']")) {
+      return;
+    }
+    event.preventDefault();
+    void getCurrentWindow().startDragging();
   }
 
   async function toggleRecording() {
@@ -164,116 +154,124 @@
       await startRecording();
     }
   }
+
+  let primaryLabel = $derived.by(() => {
+    if (model.current.kind === "downloading") return "Loading model";
+    if (model.current.kind === "error") return "Model error";
+    if (model.current.kind === "unchecked") return "Loading…";
+    if (isProcessing) return statusText || "Working…";
+    if (isRecording) return formatTime(elapsedSeconds);
+    return "Ready";
+  });
+
+  let secondaryLabel = $derived.by(() => {
+    if (model.current.kind === "downloading")
+      return `${Math.round(model.current.progress * 100)}%`;
+    if (model.current.kind === "error") return model.current.message;
+    if (isRecording) {
+      if (chunkCount > 0) {
+        return `${chunkCount} ${chunkCount === 1 ? "chunk" : "chunks"} · ⌘⇧R to stop`;
+      }
+      return "⌘⇧R to stop";
+    }
+    if (isProcessing) return "";
+    return "⌘⇧R to record";
+  });
 </script>
 
-<div class="recording-view">
-  {#if model.current.kind === "downloading"}
-    <div class="splash">
-      <h3>Downloading Whisper model</h3>
-      <p class="splash-model">ggml-large-v3-turbo-q5_0 (~547 MB)</p>
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          style="width: {model.current.progress * 100}%"
-        ></div>
-      </div>
-      <p class="splash-text">{Math.round(model.current.progress * 100)}%</p>
+<!-- svelte-ignore a11y_no_static_element_interactions — the drag
+     handler is opt-in pointer behaviour; the visible interactive
+     control inside (.record-btn) keeps its own button semantics. -->
+<div class="pill" onpointerdown={onPointerDown}>
+  {#if startError}
+    <div class="error-strip" role="alert">
+      <p class="error-msg">{startError}</p>
+      <button class="retry-btn" type="button" onclick={startRecording}>
+        Retry
+      </button>
     </div>
-  {:else if model.current.kind === "error"}
-    <div class="splash splash-error">
-      <p class="error-icon">!</p>
-      <p>{model.current.message}</p>
-    </div>
-  {:else if model.current.kind === "unchecked"}
-    <div class="splash">
-      <p>Loading model…</p>
-    </div>
-  {:else}
-    {#if startError}
-      <div class="error-strip" role="alert">
-        <p class="error-msg">{startError}</p>
-        <button class="retry-btn" type="button" onclick={startRecording}>
-          Retry
-        </button>
-      </div>
-    {/if}
+  {/if}
+
+  <div class="pill-body" data-tauri-drag-region>
     <button
       class="record-btn"
       class:recording={isRecording}
       class:processing={isProcessing}
-      disabled={isProcessing}
+      class:disabled={!modelReady}
+      disabled={isProcessing || !modelReady}
       aria-label={isRecording ? "Stop recording" : "Start recording"}
       onclick={toggleRecording}
     >
       <span class="record-icon" class:pulse={isRecording}></span>
     </button>
 
-    {#if isRecording}
-      <p class="timer">{formatTime(elapsedSeconds)}</p>
-    {/if}
+    <div class="labels">
+      <p class="primary" class:recording={isRecording}>{primaryLabel}</p>
+      <p class="secondary">{secondaryLabel}</p>
+    </div>
 
-    <p class="status">
-      {#if isRecording}
-        Recording <span class="hint">(⌘⇧R to stop)</span>
-      {:else if isProcessing}
-        {statusText}
-      {:else}
-        Click or press ⌘⇧R to record
-      {/if}
-    </p>
-
-    {#if isRecording && hasPartialTranscript}
-      <div class="partial-transcript">
-        <h3>
-          Live transcript ({chunkCount}
-          {chunkCount === 1 ? "chunk" : "chunks"})
-        </h3>
-        {#if hasBothTracks}
-          {#if micTranscript}
-            <div class="track-section">
-              <span class="track-label">You</span>
-              <p>{micTranscript}</p>
-            </div>
-          {/if}
-          {#if sysTranscript}
-            <div class="track-section">
-              <span class="track-label">Other</span>
-              <p>{sysTranscript}</p>
-            </div>
-          {/if}
-        {:else}
-          <p>{micTranscript || sysTranscript}</p>
-        {/if}
-      </div>
+    {#if model.current.kind === "downloading"}
+      <div
+        class="progress-ring"
+        aria-label="Download progress"
+        style="--progress: {model.current.progress * 100}%"
+      ></div>
     {/if}
-  {/if}
+  </div>
 </div>
 
 <style>
-  .recording-view {
+  :global(html),
+  :global(body) {
+    background: transparent;
+    overflow: hidden;
+  }
+
+  .pill {
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
+    padding: 8px;
     display: flex;
     flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .pill-body {
+    display: flex;
     align-items: center;
-    padding: var(--space-5) var(--space-4);
-    min-height: 100vh;
-    box-sizing: border-box;
+    gap: 0.65rem;
+    padding: 0 0.7rem 0 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      0 8px 24px rgba(0, 0, 0, 0.18);
+    flex: 1;
+    min-height: 0;
   }
 
   .record-btn {
-    width: 72px;
-    height: 72px;
+    appearance: none;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    border: 3px solid var(--border-strong);
+    border: 2px solid var(--border-strong);
     background: var(--surface-raised);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    flex-shrink: 0;
+    transition: border-color 120ms ease, transform 120ms ease;
+    padding: 0;
   }
 
-  .record-btn:hover {
+  .record-btn:hover:not(:disabled) {
     border-color: var(--accent-border);
+    transform: scale(1.04);
   }
 
   .record-btn.recording {
@@ -286,18 +284,23 @@
     cursor: wait;
   }
 
+  .record-btn.disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
   .record-icon {
-    width: 28px;
-    height: 28px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: #ff4444;
-    transition: all 0.2s;
+    transition: border-radius 120ms ease, width 120ms ease, height 120ms ease;
   }
 
   .record-btn.recording .record-icon {
-    border-radius: 4px;
-    width: 24px;
-    height: 24px;
+    border-radius: 3px;
+    width: 13px;
+    height: 13px;
   }
 
   .pulse {
@@ -310,154 +313,86 @@
       opacity: 1;
     }
     50% {
-      opacity: 0.5;
+      opacity: 0.55;
     }
   }
 
-  .timer {
-    font-size: 28px;
-    font-weight: 600;
-    color: #ff4444;
-    margin: 12px 0 0 0;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 1px;
-    font-family: var(--font-mono);
-  }
-
-  .status {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin-top: 8px;
-    text-align: center;
-  }
-
-  .hint {
-    font-size: 11px;
-    color: var(--text-faint);
-  }
-
-  .partial-transcript {
-    margin-top: 20px;
-    width: 100%;
-    padding: 12px;
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    border-radius: var(--radius-lg);
-    box-sizing: border-box;
-    max-height: 180px;
-    overflow-y: auto;
-  }
-
-  .partial-transcript h3 {
-    font-size: 12px;
-    color: var(--accent);
-    margin: 0 0 8px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .partial-transcript p {
-    font-size: 14px;
-    line-height: 1.5;
-    margin: 0;
-    color: var(--text);
-  }
-
-  .track-section {
-    margin-bottom: 12px;
-  }
-
-  .track-section:last-child {
-    margin-bottom: 0;
-  }
-
-  .track-label {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    margin-bottom: 4px;
-    background: var(--surface-raised);
-    color: var(--text-muted);
-  }
-
-  .splash {
+  .labels {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
     justify-content: center;
-    flex: 1;
-    gap: 12px;
-    width: 100%;
+    gap: 1px;
   }
 
-  .splash h3 {
-    font-size: 14px;
+  .primary {
+    margin: 0;
+    font-size: 1rem;
     font-weight: 600;
-    margin: 0;
-  }
-
-  .splash-model {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .splash-text {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .splash-error {
-    color: var(--danger);
-    text-align: center;
-  }
-
-  .error-icon {
-    font-size: 32px;
-    font-weight: bold;
-    margin: 0;
-  }
-
-  .progress-bar {
-    width: 100%;
-    max-width: 280px;
-    height: 6px;
-    background: var(--surface-raised);
-    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    line-height: 1.2;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .progress-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 3px;
-    transition: width 0.3s ease;
+  .primary.recording {
+    color: #ff4444;
+    font-family: var(--font-mono);
+    letter-spacing: 0.5px;
+  }
+
+  .secondary {
+    margin: 0;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progress-ring {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: conic-gradient(
+      var(--accent) var(--progress, 0%),
+      var(--border-strong) 0
+    );
+    position: relative;
+  }
+
+  .progress-ring::after {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: var(--surface);
   }
 
   .error-strip {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     background: var(--danger-bg);
     border: 1px solid var(--danger-border);
     color: var(--danger);
-    padding: 0.45rem 0.7rem;
+    padding: 0.3rem 0.55rem;
     border-radius: var(--radius);
-    width: 100%;
-    box-sizing: border-box;
-    margin-bottom: 0.85rem;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
   }
 
   .error-msg {
     margin: 0;
     flex: 1;
     word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .retry-btn {
@@ -465,10 +400,10 @@
     background: transparent;
     border: 1px solid currentColor;
     color: inherit;
-    padding: 0.25rem 0.7rem;
+    padding: 0.15rem 0.55rem;
     border-radius: var(--radius);
     cursor: pointer;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     flex-shrink: 0;
   }
 

@@ -21,7 +21,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                // The recording popover is a fixed-size pill,
+                // always re-centered on show. Persisting bounds
+                // would let an old 480x320 state override the new
+                // compact size on next launch.
+                .with_denylist(&[windows::RECORDING])
+                .build(),
+        )
         .manage(AppState::new(config::load_config()))
         .on_menu_event(tray::handle_menu_event)
         .invoke_handler(tauri::generate_handler![

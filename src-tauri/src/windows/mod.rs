@@ -20,8 +20,8 @@ const MAIN_H: f64 = 600.0;
 const MAIN_MIN_W: f64 = 700.0;
 const MAIN_MIN_H: f64 = 450.0;
 
-const RECORDING_W: f64 = 480.0;
-const RECORDING_H: f64 = 320.0;
+const RECORDING_W: f64 = 300.0;
+const RECORDING_H: f64 = 80.0;
 
 const SETTINGS_W: f64 = 840.0;
 const SETTINGS_H: f64 = 600.0;
@@ -47,7 +47,10 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
         .resizable(false)
         .decorations(false)
         .transparent(true)
-        .shadow(true)
+        // Pill renders its own drop shadow via box-shadow on the
+        // visible element; the OS window shadow would otherwise
+        // outline the full transparent rect, not the pill.
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)
