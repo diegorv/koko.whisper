@@ -62,17 +62,97 @@ pub(super) fn copy_to_clipboard(text: &str) {
     }
 }
 
-pub(super) fn save_markdown(output_folder: &PathBuf, transcript: &str) -> anyhow::Result<PathBuf> {
+/// Extra metadata woven into the saved markdown frontmatter. All
+/// fields are optional: any `None` row is omitted, so legacy code
+/// paths (or the recovery flow that has no clean duration) write
+/// only the fields they know about.
+#[derive(Default, Clone)]
+pub(super) struct TranscriptMeta {
+    pub duration_seconds: Option<u64>,
+    pub mic_device: Option<String>,
+    pub sys_device: Option<String>,
+    pub chunks: Option<u32>,
+}
+
+fn format_duration(seconds: u64) -> String {
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+    if h > 0 {
+        format!("{:02}:{:02}:{:02}", h, m, s)
+    } else {
+        format!("{:02}:{:02}", m, s)
+    }
+}
+
+/// Pure. Build a `TranscriptMeta` from a (just-completed or just-
+/// recovered) session manifest. Devices and chunk count come from
+/// the manifest; the caller supplies `duration_seconds` because the
+/// manifest does not record session length on disk (it would force
+/// rewriting the manifest after stop, and recovery has no clean
+/// duration anyway).
+pub(super) fn build_meta_from_manifest(
+    manifest: &crate::session::SessionManifest,
+    duration_seconds: Option<u64>,
+) -> TranscriptMeta {
+    let mic_device = manifest
+        .tracks
+        .get(&TrackName::Microphone.to_string())
+        .map(|info| info.device_name.clone());
+    let sys_device = manifest
+        .tracks
+        .get(&TrackName::System.to_string())
+        .map(|info| info.device_name.clone());
+    let chunks = if manifest.chunks.is_empty() {
+        None
+    } else {
+        Some(manifest.chunks.len() as u32)
+    };
+    TranscriptMeta {
+        duration_seconds,
+        mic_device,
+        sys_device,
+        chunks,
+    }
+}
+
+/// Pure. Build the markdown frontmatter block from the wall-clock
+/// timestamp and the optional meta rows. The body separator (`---`)
+/// and the transcript itself are appended by the caller.
+pub(super) fn build_frontmatter(now_str: &str, meta: &TranscriptMeta) -> String {
+    let mut lines: Vec<String> = vec![
+        "# Voice transcription".to_string(),
+        String::new(),
+        format!("**Date:** {}", now_str),
+    ];
+    if let Some(dur) = meta.duration_seconds {
+        lines.push(format!("**Duration:** {}", format_duration(dur)));
+    }
+    lines.push("**Language:** Portuguese (BR)".to_string());
+    if let Some(ref mic) = meta.mic_device {
+        lines.push(format!("**Microphone:** {}", mic));
+    }
+    if let Some(ref sys) = meta.sys_device {
+        lines.push(format!("**System audio:** {}", sys));
+    }
+    if let Some(chunks) = meta.chunks {
+        lines.push(format!("**Chunks:** {}", chunks));
+    }
+    lines.join("\n")
+}
+
+pub(super) fn save_markdown(
+    output_folder: &PathBuf,
+    transcript: &str,
+    meta: &TranscriptMeta,
+) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(output_folder)?;
     let now = Local::now();
     let filename = format!("{}.md", now.format("%Y-%m-%d_%H-%M-%S"));
     let file_path = output_folder.join(&filename);
 
-    let content = format!(
-        "# Transcricao de Voz\n\n**Data:** {}\n**Idioma:** Portugues (BR)\n\n---\n\n{}\n",
-        now.format("%Y-%m-%d %H:%M:%S"),
-        transcript
-    );
+    let frontmatter = build_frontmatter(&now.format("%Y-%m-%d %H:%M:%S").to_string(), meta);
+    let content = format!("{}\n\n---\n\n{}\n", frontmatter, transcript);
 
     std::fs::write(&file_path, content)?;
     log::info!("Saved transcription to {:?}", file_path);
@@ -167,6 +247,11 @@ pub async fn start_recording_impl(app: &AppHandle) -> Result<(), String> {
     *state.recording_started_at.lock().unwrap() = Some(std::time::Instant::now());
     crate::tray::update_tray_menu(app);
 
+    // The recording popover is the active-session surface. Show it
+    // so the user sees the timer + partial transcripts immediately,
+    // even when the session was kicked off from the tray or shortcut.
+    crate::windows::show_recording(app);
+
     // Notify frontend (if window is open) so it can sync UI
     let _ = app.emit("recording-started", ());
 
@@ -190,6 +275,11 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
     state
         .app_status
         .store(STATUS_TRANSCRIBING, Ordering::Relaxed);
+    let duration_seconds: Option<u64> = state
+        .recording_started_at
+        .lock()
+        .ok()
+        .and_then(|guard| guard.map(|t| t.elapsed().as_secs()));
     *state.recording_started_at.lock().unwrap() = None;
     crate::tray::update_tray_menu(app);
 
@@ -236,7 +326,8 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
     if full_transcript.is_empty() {
         state.app_status.store(STATUS_IDLE, Ordering::Relaxed);
         crate::tray::update_tray_menu(app);
-        return Err("Nenhum audio gravado".to_string());
+        crate::windows::hide_recording(app);
+        return Err("No audio recorded".to_string());
     }
 
     // Mark session as completed
@@ -247,14 +338,32 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
         full_transcript.len()
     );
 
-    // Save final markdown
+    // Save final markdown. Pull the meta off the persisted manifest
+    // so device names + chunk count match exactly what the recovery
+    // path would write for the same session.
     let output_folder = state.output_folder.lock().await.clone();
-    save_markdown(&output_folder, &full_transcript).map_err(|e| e.to_string())?;
+    let meta = match crate::session::read_manifest(&session_dir) {
+        Ok(manifest) => build_meta_from_manifest(&manifest, duration_seconds),
+        Err(e) => {
+            eprintln!("[session] read_manifest failed at stop: {}", e);
+            TranscriptMeta {
+                duration_seconds,
+                ..Default::default()
+            }
+        }
+    };
+    save_markdown(&output_folder, &full_transcript, &meta).map_err(|e| e.to_string())?;
 
     // Copy to clipboard
     copy_to_clipboard(&full_transcript);
 
     let _ = app.emit("transcription-complete", &full_transcript);
+
+    // Auto-hide the recording popover when the session wraps up and
+    // show the Main window so the user sees the new entry in the
+    // history pane without an extra click.
+    crate::windows::hide_recording(app);
+    crate::windows::show_main(app);
 
     state.app_status.store(STATUS_IDLE, Ordering::Relaxed);
     crate::tray::update_tray_menu(app);
@@ -342,5 +451,110 @@ mod tests {
         t.insert(TrackName::System, "".to_string());
         t.insert(TrackName::Microphone, "mic only".to_string());
         assert_eq!(build_transcript(&t), "mic only");
+    }
+
+    #[test]
+    fn build_frontmatter_with_full_meta_emits_every_row() {
+        let meta = TranscriptMeta {
+            duration_seconds: Some(155),
+            mic_device: Some("MacBook Pro Microphone".to_string()),
+            sys_device: Some("ScreenCaptureKit".to_string()),
+            chunks: Some(12),
+        };
+        let fm = build_frontmatter("2026-05-22 16:08:26", &meta);
+        assert!(fm.contains("# Voice transcription"));
+        assert!(fm.contains("**Date:** 2026-05-22 16:08:26"));
+        assert!(fm.contains("**Duration:** 02:35"));
+        assert!(fm.contains("**Language:** Portuguese (BR)"));
+        assert!(fm.contains("**Microphone:** MacBook Pro Microphone"));
+        assert!(fm.contains("**System audio:** ScreenCaptureKit"));
+        assert!(fm.contains("**Chunks:** 12"));
+    }
+
+    #[test]
+    fn build_frontmatter_omits_rows_for_none_fields() {
+        // The "empty meta" case mirrors the recovery flow: the
+        // session crashed before stop, so we have no duration and
+        // perhaps no device info either. The Detail pane is supposed
+        // to hide rows whose field is absent, so the file we save
+        // had better leave them out instead of writing a blank row.
+        let meta = TranscriptMeta::default();
+        let fm = build_frontmatter("2026-05-22 16:08:26", &meta);
+        assert!(fm.contains("**Date:** 2026-05-22 16:08:26"));
+        assert!(fm.contains("**Language:** Portuguese (BR)"));
+        assert!(!fm.contains("**Duration:"));
+        assert!(!fm.contains("**Microphone:"));
+        assert!(!fm.contains("**System audio:"));
+        assert!(!fm.contains("**Chunks:"));
+    }
+
+    #[test]
+    fn build_frontmatter_duration_formats_hours_when_long() {
+        let meta = TranscriptMeta {
+            duration_seconds: Some(3661),
+            ..Default::default()
+        };
+        let fm = build_frontmatter("now", &meta);
+        assert!(fm.contains("**Duration:** 01:01:01"));
+    }
+
+    #[test]
+    fn build_meta_from_manifest_pulls_devices_and_chunk_count() {
+        use crate::session::{SessionChunk, SessionManifest, SessionStatus, TrackInfo};
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackName::Microphone.to_string(),
+            TrackInfo {
+                sample_rate: 48000,
+                device_name: "AirPods".to_string(),
+            },
+        );
+        tracks.insert(
+            TrackName::System.to_string(),
+            TrackInfo {
+                sample_rate: 48000,
+                device_name: "ScreenCaptureKit".to_string(),
+            },
+        );
+        let manifest = SessionManifest {
+            session_id: "x".to_string(),
+            started_at: "now".to_string(),
+            tracks,
+            status: SessionStatus::Completed,
+            chunks: vec![
+                SessionChunk {
+                    filename: "mic_000.wav".to_string(),
+                    track: "microphone".to_string(),
+                    transcript: Some("a".to_string()),
+                },
+                SessionChunk {
+                    filename: "sys_000.wav".to_string(),
+                    track: "system".to_string(),
+                    transcript: Some("b".to_string()),
+                },
+            ],
+        };
+        let meta = build_meta_from_manifest(&manifest, Some(45));
+        assert_eq!(meta.duration_seconds, Some(45));
+        assert_eq!(meta.mic_device.as_deref(), Some("AirPods"));
+        assert_eq!(meta.sys_device.as_deref(), Some("ScreenCaptureKit"));
+        assert_eq!(meta.chunks, Some(2));
+    }
+
+    #[test]
+    fn build_meta_from_manifest_omits_chunks_when_empty() {
+        use crate::session::{SessionManifest, SessionStatus};
+        let manifest = SessionManifest {
+            session_id: "x".to_string(),
+            started_at: "now".to_string(),
+            tracks: HashMap::new(),
+            status: SessionStatus::Completed,
+            chunks: vec![],
+        };
+        let meta = build_meta_from_manifest(&manifest, None);
+        assert!(meta.duration_seconds.is_none());
+        assert!(meta.mic_device.is_none());
+        assert!(meta.sys_device.is_none());
+        assert!(meta.chunks.is_none());
     }
 }

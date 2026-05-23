@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 
-use super::recording::{build_transcript, copy_to_clipboard, save_markdown};
+use super::recording::{build_meta_from_manifest, build_transcript, copy_to_clipboard, save_markdown};
 
 #[derive(serde::Serialize, Clone)]
 pub struct IncompleteSession {
@@ -97,7 +97,7 @@ pub async fn recover_session(
 
             let text = {
                 let ctx_guard = state.whisper_context.lock().await;
-                let ctx = ctx_guard.as_ref().ok_or("Whisper nao inicializado")?;
+                let ctx = ctx_guard.as_ref().ok_or("Whisper not initialized")?;
                 crate::transcription::transcribe(ctx, &audio_data).map_err(|e| e.to_string())?
             };
 
@@ -129,9 +129,11 @@ pub async fn recover_session(
     crate::session::write_manifest(&session_path, &updated_manifest)
         .map_err(|e| e.to_string())?;
 
-    // Save the recovered markdown
+    // Save the recovered markdown. No clean duration (the original
+    // session crashed before stop), so the Duration row is omitted.
     let output_folder = state.output_folder.lock().await.clone();
-    save_markdown(&output_folder, &full_transcript).map_err(|e| e.to_string())?;
+    let meta = build_meta_from_manifest(&updated_manifest, None);
+    save_markdown(&output_folder, &full_transcript, &meta).map_err(|e| e.to_string())?;
 
     copy_to_clipboard(&full_transcript);
 

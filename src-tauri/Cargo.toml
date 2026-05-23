@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -52,4 +53,23 @@ dirs = "6"
 # Clipboard
 arboard = "3"
 audioadapter-buffers = "3.0.0"
+
+# SVG → RGBA rasteriser for the tray + dock icons. `usvg` parses, `resvg`
+# renders into a `tiny_skia::Pixmap`. `default-features = false` on usvg
+# skips fontdb + system-font discovery — we only draw paths.
+resvg = { version = "0.47", default-features = false }
+usvg = { version = "0.47", default-features = false }
+tiny-skia = "0.12"
+
+# Encode the dock icon PNG buffer that `NSApplication.setApplicationIconImage:`
+# consumes. `image` is the maintained pure-Rust encoder.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Objective-C bridge for the macOS-specific dock-icon swap (no Tauri
+# API today). `objc2-app-kit` gives us NSApplication; `objc2-foundation`
+# gives us NSData / NSString.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
 

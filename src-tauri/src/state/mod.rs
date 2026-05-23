@@ -43,10 +43,24 @@ impl TrackName {
     /// Human-readable label for transcript headers.
     pub fn display_label(&self) -> &'static str {
         match self {
-            TrackName::Microphone => "Eu (Microfone)",
-            TrackName::System => "Participante (Audio do Sistema)",
+            TrackName::Microphone => "Microphone",
+            TrackName::System => "System audio",
         }
     }
+}
+
+/// Lifecycle state of the Whisper model. The model boot sequence
+/// (download → init) runs in `setup()` so windows can show a splash
+/// while it completes. Frontend reads the snapshot via
+/// `get_model_status` and subscribes to `model-status` events for
+/// transitions.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ModelStatus {
+    Unchecked,
+    Downloading { progress: f64 },
+    Ready,
+    Error { message: String },
 }
 
 /// State for a single audio track (microphone, system audio, etc.)
@@ -104,6 +118,10 @@ pub struct AppState {
     pub app_status: Arc<AtomicU8>,
     /// When the current recording started (for timer display)
     pub recording_started_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    /// Snapshot of the Whisper model lifecycle. Set by the boot task
+    /// in `setup()`. Frontend windows read it via `get_model_status`
+    /// and subscribe to `model-status` events for transitions.
+    pub model_status: Arc<Mutex<ModelStatus>>,
 }
 
 impl AppState {
@@ -142,6 +160,7 @@ impl AppState {
             active_session: Arc::new(Mutex::new(None)),
             app_status: Arc::new(AtomicU8::new(STATUS_IDLE)),
             recording_started_at: Arc::new(std::sync::Mutex::new(None)),
+            model_status: Arc::new(Mutex::new(ModelStatus::Unchecked)),
         }
     }
 }
@@ -180,15 +199,13 @@ mod tests {
 
     #[test]
     fn track_name_display_label_pinned_per_variant() {
-        // Pin the Portuguese-BR labels rendered in transcript headers.
-        // A drift in either string changes user-visible markdown output
-        // and breaks the multi-track aggregate format documented in
-        // CONTEXT.md ("Transcription").
-        assert_eq!(TrackName::Microphone.display_label(), "Eu (Microfone)");
-        assert_eq!(
-            TrackName::System.display_label(),
-            "Participante (Audio do Sistema)"
-        );
+        // Pin the English labels rendered in transcript headers. The
+        // PT-BR labels were dropped in ui-02 (commit replaces the
+        // app's UI strings with English). The aggregate markdown
+        // format documented in CONTEXT.md ("Transcription") still
+        // pairs one heading per Track, just under the new strings.
+        assert_eq!(TrackName::Microphone.display_label(), "Microphone");
+        assert_eq!(TrackName::System.display_label(), "System audio");
     }
 
     #[test]
