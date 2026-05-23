@@ -2,8 +2,10 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
-  import TranscriptionList from "$lib/transcriptions/TranscriptionList.svelte";
   import { createModelStatus } from "$lib/model-status.svelte";
+  import HistoryList from "$lib/history/HistoryList.svelte";
+  import HistoryDetail from "$lib/history/HistoryDetail.svelte";
+  import type { TranscriptionEntry } from "$lib/history/types";
 
   interface IncompleteSession {
     session_id: string;
@@ -14,14 +16,36 @@
   }
 
   const model = createModelStatus();
+
+  let entries = $state<TranscriptionEntry[]>([]);
+  let selectedPath = $state<string | null>(null);
+  let listError = $state<string | null>(null);
+
   let incompleteSessions: IncompleteSession[] = $state([]);
   let recovering = $state(false);
   let recoveryError = $state("");
   let unlisteners: (() => void)[] = [];
 
-  onMount(async () => {
-    unlisteners.push(await model.subscribe());
+  let selected = $derived(
+    selectedPath === null
+      ? null
+      : entries.find((e) => e.path === selectedPath) ?? null,
+  );
 
+  async function refreshEntries() {
+    try {
+      const next = await invoke<TranscriptionEntry[]>("get_transcriptions");
+      entries = next;
+      listError = null;
+      if (selectedPath !== null && !next.some((e) => e.path === selectedPath)) {
+        selectedPath = null;
+      }
+    } catch (e) {
+      listError = String(e);
+    }
+  }
+
+  async function refreshIncomplete() {
     try {
       incompleteSessions = await invoke<IncompleteSession[]>(
         "check_incomplete_sessions",
@@ -29,16 +53,18 @@
     } catch (e) {
       console.error("check_incomplete_sessions failed", e);
     }
+  }
 
-    // After a successful recovery a new transcription lands on disk;
-    // refresh the incomplete list so the recovered row disappears.
+  onMount(async () => {
+    unlisteners.push(await model.subscribe());
+    await Promise.all([refreshEntries(), refreshIncomplete()]);
+
+    // A completed transcription writes a new `.md` file. Refresh
+    // the list (and the incomplete-sessions banner) so the user
+    // sees the new entry without leaving the window.
     unlisteners.push(
       await listen("transcription-complete", async () => {
-        try {
-          incompleteSessions = await invoke<IncompleteSession[]>(
-            "check_incomplete_sessions",
-          );
-        } catch {}
+        await Promise.all([refreshEntries(), refreshIncomplete()]);
       }),
     );
   });
@@ -71,9 +97,13 @@
       recoveryError = `Dismiss failed: ${e}`;
     }
   }
+
+  function onSelect(path: string) {
+    selectedPath = path;
+  }
 </script>
 
-<main>
+<main class="main">
   {#if model.current.kind === "downloading"}
     <div class="splash">
       <h2>Downloading Whisper model</h2>
@@ -129,57 +159,40 @@
       </div>
     {/if}
 
-    <div class="placeholder">
-      <h1>History</h1>
-      <p>The two-pane browser lands in ui-03.</p>
-      <p class="hint">
-        Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd> to start recording, or open Settings via the tray.
-      </p>
+    <div class="panes">
+      <aside class="list-pane">
+        {#if listError}
+          <div class="list-error">
+            <p>Failed to load transcriptions: {listError}</p>
+            <button class="retry-btn" onclick={refreshEntries}>Retry</button>
+          </div>
+        {:else if entries.length === 0}
+          <div class="list-empty">
+            <div class="glyph" aria-hidden="true">🎙</div>
+            <p class="empty-title">No transcriptions yet</p>
+            <p class="empty-hint">
+              Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd> to start recording.
+            </p>
+          </div>
+        {:else}
+          <HistoryList {entries} {selectedPath} {onSelect} />
+        {/if}
+      </aside>
+      <section class="detail-pane">
+        <HistoryDetail entry={selected} />
+      </section>
     </div>
-
-    <TranscriptionList />
   {/if}
 </main>
 
 <style>
-  main {
-    padding: var(--space-4);
-    min-height: 100vh;
+  .main {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+    width: 100vw;
     box-sizing: border-box;
-  }
-
-  .placeholder {
-    margin: var(--space-5) auto var(--space-4);
-    text-align: center;
-    max-width: 480px;
-  }
-
-  .placeholder h1 {
-    margin: 0 0 var(--space-2);
-    font-size: 1.4rem;
-    font-weight: 600;
-  }
-
-  .placeholder p {
-    margin: 0 0 var(--space-2);
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .placeholder .hint {
-    color: var(--text-faint);
-    font-size: 0.8rem;
-  }
-
-  .placeholder kbd {
-    display: inline-block;
-    padding: 0.05em 0.4em;
-    margin: 0 1px;
-    font-family: inherit;
-    font-size: 0.85em;
-    background: var(--surface-raised);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
+    overflow: hidden;
   }
 
   .splash {
@@ -189,6 +202,7 @@
     justify-content: center;
     min-height: 60vh;
     gap: 12px;
+    grid-row: 1 / span 2;
   }
 
   .splash h2 {
@@ -197,14 +211,9 @@
     margin: 0;
   }
 
-  .splash-model {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
+  .splash-model,
   .splash-text {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-muted);
     margin: 0;
   }
@@ -236,38 +245,38 @@
   }
 
   .recovery-banner {
+    margin: 0.75rem 0.75rem 0;
     background: var(--warning-bg);
     border: 1px solid var(--warning-border);
     border-radius: var(--radius-lg);
-    padding: 12px;
-    margin-bottom: 16px;
+    padding: 0.75rem 0.85rem;
   }
 
   .recovery-banner h3 {
-    font-size: 13px;
+    font-size: 0.85rem;
     color: var(--warning);
-    margin: 0 0 8px 0;
+    margin: 0 0 0.5rem;
   }
 
   .recovery-item p {
-    font-size: 12px;
+    font-size: 0.78rem;
     color: var(--text-muted);
-    margin: 0 0 8px 0;
+    margin: 0 0 0.5rem;
   }
 
   .recovery-actions {
     display: flex;
-    gap: 8px;
+    gap: 0.5rem;
   }
 
   .recover-btn {
     background: var(--accent-bg);
     border: 1px solid var(--accent-border);
     color: var(--accent);
-    padding: 6px 14px;
+    padding: 0.3rem 0.85rem;
     border-radius: var(--radius);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 
   .recover-btn:hover {
@@ -283,10 +292,10 @@
     background: transparent;
     border: 1px solid var(--border-strong);
     color: var(--text-muted);
-    padding: 6px 14px;
+    padding: 0.3rem 0.85rem;
     border-radius: var(--radius);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 
   .dismiss-btn:hover {
@@ -295,8 +304,90 @@
   }
 
   .recovery-error {
-    margin: 8px 0 0;
+    margin: 0.5rem 0 0;
     color: var(--danger);
-    font-size: 12px;
+    font-size: 0.75rem;
+  }
+
+  .panes {
+    display: grid;
+    grid-template-columns: 40% 60%;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .list-pane {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    min-height: 0;
+    background: var(--surface-sunken);
+  }
+
+  .detail-pane {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .list-empty,
+  .list-error {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    gap: 0.5rem;
+  }
+
+  .glyph {
+    font-size: 2.5rem;
+    opacity: 0.6;
+  }
+
+  .empty-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .empty-hint {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    max-width: 28ch;
+    line-height: 1.5;
+  }
+
+  .empty-hint kbd {
+    display: inline-block;
+    padding: 0.05em 0.4em;
+    margin: 0 1px;
+    font-family: inherit;
+    font-size: 0.85em;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+
+  .list-error p {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.8rem;
+  }
+
+  .retry-btn {
+    appearance: none;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+    padding: 0.3rem 0.85rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+
+  .retry-btn:hover {
+    background: var(--accent-bg-strong);
   }
 </style>
