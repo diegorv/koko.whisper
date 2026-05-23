@@ -31,7 +31,7 @@
 
 {#if transcriptions.length > 0}
   <div class="transcription-list">
-    <h3>Transcricoes recentes</h3>
+    <h3>Recent transcriptions</h3>
     {#each transcriptions as entry}
       <button class="entry" onclick={() => revealItemInDir(entry.path)}>
         <span class="filename">{entry.filename}</span>

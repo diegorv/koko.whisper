@@ -22,11 +22,6 @@
     sys_enabled: boolean;
   }
 
-  interface Props {
-    onBack: () => void;
-  }
-
-  let { onBack }: Props = $props();
   let outputFolder = $state("");
   let devices: AudioDevice[] = $state([]);
   let micDevice: SelectedDevice | null = $state(null);
@@ -80,7 +75,7 @@
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Selecionar pasta de transcricoes",
+      title: "Select transcription folder",
     });
     if (selected) {
       outputFolder = selected as string;
@@ -142,15 +137,14 @@
 
 <div class="settings">
   <div class="header">
-    <button class="back-btn" onclick={onBack}>← Voltar</button>
-    <h2>Configuracoes</h2>
+    <h2>Settings</h2>
   </div>
 
   <div class="setting-row">
     <div class="track-header">
-      <label for="mic-select">Microfone</label>
+      <label for="mic-select">Microphone</label>
       <button class="toggle" class:active={micEnabled} onclick={toggleMic}>
-        {micEnabled ? "Ativado" : "Desativado"}
+        {micEnabled ? "Enabled" : "Disabled"}
       </button>
     </div>
     <div class:disabled={!micEnabled}>
@@ -161,11 +155,11 @@
         onchange={changeMicDevice}
         disabled={!micEnabled}
       >
-        <option value="__default__">Microfone padrao do sistema</option>
+        <option value="__default__">System default microphone</option>
         {#each micDevices as device}
           <option value="Input::{device.name}">
             {device.name}
-            {device.is_default ? " (padrao)" : ""}
+            {device.is_default ? " (default)" : ""}
           </option>
         {/each}
       </select>
@@ -176,14 +170,14 @@
         ></div>
       </div>
     </div>
-    <p class="hint">Grava a sua voz</p>
+    <p class="hint">Captures your voice.</p>
   </div>
 
   <div class="setting-row">
     <div class="track-header">
-      <label for="sys-select">Audio do sistema</label>
+      <label for="sys-select">System audio</label>
       <button class="toggle" class:active={sysEnabled} onclick={toggleSys}>
-        {sysEnabled ? "Ativado" : "Desativado"}
+        {sysEnabled ? "Enabled" : "Disabled"}
       </button>
     </div>
     <div class:disabled={!sysEnabled}>
@@ -210,33 +204,33 @@
     </div>
     <p class="hint">
       {#if systemDevices.length > 0}
-        Grava o audio de reunioes, videos, etc. via ScreenCaptureKit
+        Captures meeting audio, video calls, and other apps via ScreenCaptureKit.
       {:else}
-        Requer macOS 13+ e permissao de Gravacao de Tela
+        Requires macOS 13+ and Screen Recording permission.
       {/if}
     </p>
   </div>
 
   <div class="setting-row">
-    <label for="folder-input">Pasta de transcricoes</label>
+    <label for="folder-input">Transcription folder</label>
     <div class="folder-picker">
       <input id="folder-input" type="text" readonly value={outputFolder} />
-      <button onclick={pickFolder}>Alterar</button>
+      <button onclick={pickFolder}>Change</button>
     </div>
   </div>
 
   <div class="setting-row">
-    <label>Modelo</label>
+    <label>Model</label>
     <p class="info">ggml-large-v3-turbo-q5_0</p>
   </div>
 
   <div class="setting-row">
-    <label>Atalho</label>
-    <p class="info">Cmd+Shift+R</p>
+    <label>Shortcut</label>
+    <p class="info">⌘⇧R record · ⌘⇧H history · ⌘, settings</p>
   </div>
 
   <div class="setting-row">
-    <label>Versao</label>
+    <label>Version</label>
     <p class="info">{__BUILD_INFO__}</p>
   </div>
 </div>
@@ -256,20 +250,6 @@
   .header h2 {
     font-size: 16px;
     margin: 0;
-  }
-
-  .back-btn {
-    background: none;
-    border: 1px solid var(--border-strong);
-    color: var(--text);
-    padding: 4px 12px;
-    border-radius: var(--radius);
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .back-btn:hover {
-    border-color: var(--accent-border);
   }
 
   .setting-row {

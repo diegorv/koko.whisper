@@ -1,10 +1,9 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { goto } from "$app/navigation";
-  import { onMount } from "svelte";
-  import RecordingView from "$lib/recording/RecordingView.svelte";
+  import { onMount, onDestroy } from "svelte";
   import TranscriptionList from "$lib/transcriptions/TranscriptionList.svelte";
+  import { createModelStatus } from "$lib/model-status.svelte";
 
   interface IncompleteSession {
     session_id: string;
@@ -14,99 +13,97 @@
     session_dir: string;
   }
 
-  let modelReady = $state(false);
-  let downloadProgress = $state(0);
-  let downloading = $state(false);
-  let initError = $state("");
+  const model = createModelStatus();
   let incompleteSessions: IncompleteSession[] = $state([]);
   let recovering = $state(false);
+  let recoveryError = $state("");
+  let unlisteners: (() => void)[] = [];
 
   onMount(async () => {
-    const modelExists = await invoke<boolean>("check_model_status");
-
-    if (!modelExists) {
-      downloading = true;
-      const unlisten = await listen<number>(
-        "model-download-progress",
-        (event) => {
-          downloadProgress = event.payload;
-        },
-      );
-
-      try {
-        await invoke("download_model");
-        unlisten();
-        downloading = false;
-      } catch (e) {
-        unlisten();
-        downloading = false;
-        initError = `Erro ao baixar modelo: ${e}`;
-        return;
-      }
-    }
+    unlisteners.push(await model.subscribe());
 
     try {
-      await invoke("initialize_whisper");
-      modelReady = true;
-
-      // Check for incomplete sessions from a previous crash
       incompleteSessions = await invoke<IncompleteSession[]>(
         "check_incomplete_sessions",
       );
     } catch (e) {
-      initError = `Erro ao carregar modelo: ${e}`;
+      console.error("check_incomplete_sessions failed", e);
     }
+
+    // After a successful recovery a new transcription lands on disk;
+    // refresh the incomplete list so the recovered row disappears.
+    unlisteners.push(
+      await listen("transcription-complete", async () => {
+        try {
+          incompleteSessions = await invoke<IncompleteSession[]>(
+            "check_incomplete_sessions",
+          );
+        } catch {}
+      }),
+    );
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => fn());
   });
 
   async function recoverSession(session: IncompleteSession) {
     recovering = true;
+    recoveryError = "";
     try {
       await invoke("recover_session", { sessionDir: session.session_dir });
       incompleteSessions = incompleteSessions.filter(
         (s) => s.session_id !== session.session_id,
       );
     } catch (e) {
-      initError = `Erro ao recuperar: ${e}`;
+      recoveryError = `Recovery failed: ${e}`;
     }
     recovering = false;
   }
 
   async function dismissSession(session: IncompleteSession) {
-    await invoke("dismiss_session", { sessionDir: session.session_dir });
-    incompleteSessions = incompleteSessions.filter(
-      (s) => s.session_id !== session.session_id,
-    );
+    try {
+      await invoke("dismiss_session", { sessionDir: session.session_dir });
+      incompleteSessions = incompleteSessions.filter(
+        (s) => s.session_id !== session.session_id,
+      );
+    } catch (e) {
+      recoveryError = `Dismiss failed: ${e}`;
+    }
   }
 </script>
 
 <main>
-  {#if initError}
-    <div class="error-screen">
-      <p class="error-icon">!</p>
-      <p>{initError}</p>
-    </div>
-  {:else if downloading}
-    <div class="download-screen">
-      <h2>Baixando modelo Whisper</h2>
-      <p class="model-name">ggml-large-v3-turbo-q5_0 (~547MB)</p>
+  {#if model.current.kind === "downloading"}
+    <div class="splash">
+      <h2>Downloading Whisper model</h2>
+      <p class="splash-model">ggml-large-v3-turbo-q5_0 (~547 MB)</p>
       <div class="progress-bar">
-        <div class="progress-fill" style="width: {downloadProgress * 100}%"></div>
+        <div
+          class="progress-fill"
+          style="width: {model.current.progress * 100}%"
+        ></div>
       </div>
-      <p class="progress-text">{Math.round(downloadProgress * 100)}%</p>
+      <p class="splash-text">{Math.round(model.current.progress * 100)}%</p>
     </div>
-  {:else if !modelReady}
-    <div class="loading-screen">
-      <p>Carregando modelo...</p>
+  {:else if model.current.kind === "error"}
+    <div class="splash splash-error">
+      <p class="error-icon">!</p>
+      <p>{model.current.message}</p>
+    </div>
+  {:else if model.current.kind === "unchecked"}
+    <div class="splash">
+      <p>Loading model…</p>
     </div>
   {:else}
     {#if incompleteSessions.length > 0}
       <div class="recovery-banner">
-        <h3>Sessao interrompida encontrada</h3>
+        <h3>Unfinished session found</h3>
         {#each incompleteSessions as session}
           <div class="recovery-item">
             <p>
-              Inicio: {session.started_at} - {session.total_chunks} trecho(s) de
-              audio
+              Started {session.started_at} — {session.total_chunks}
+              {session.total_chunks === 1 ? "audio chunk" : "audio chunks"} captured
             </p>
             <div class="recovery-actions">
               <button
@@ -114,28 +111,33 @@
                 disabled={recovering}
                 onclick={() => recoverSession(session)}
               >
-                {recovering ? "Recuperando..." : "Recuperar transcricao"}
+                {recovering ? "Recovering…" : "Recover transcription"}
               </button>
               <button
                 class="dismiss-btn"
                 disabled={recovering}
                 onclick={() => dismissSession(session)}
               >
-                Descartar
+                Dismiss
               </button>
             </div>
           </div>
         {/each}
+        {#if recoveryError}
+          <p class="recovery-error">{recoveryError}</p>
+        {/if}
       </div>
     {/if}
 
-    <RecordingView />
-    <TranscriptionList />
-    <div class="footer">
-      <button class="settings-btn" onclick={() => goto("/settings")}>
-        Configuracoes
-      </button>
+    <div class="placeholder">
+      <h1>History</h1>
+      <p>The two-pane browser lands in ui-03.</p>
+      <p class="hint">
+        Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd> to start recording, or open Settings via the tray.
+      </p>
     </div>
+
+    <TranscriptionList />
   {/if}
 </main>
 
@@ -146,25 +148,63 @@
     box-sizing: border-box;
   }
 
-  .download-screen,
-  .loading-screen,
-  .error-screen {
+  .placeholder {
+    margin: var(--space-5) auto var(--space-4);
+    text-align: center;
+    max-width: 480px;
+  }
+
+  .placeholder h1 {
+    margin: 0 0 var(--space-2);
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+
+  .placeholder p {
+    margin: 0 0 var(--space-2);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .placeholder .hint {
+    color: var(--text-faint);
+    font-size: 0.8rem;
+  }
+
+  .placeholder kbd {
+    display: inline-block;
+    padding: 0.05em 0.4em;
+    margin: 0 1px;
+    font-family: inherit;
+    font-size: 0.85em;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+
+  .splash {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 300px;
+    min-height: 60vh;
     gap: 12px;
   }
 
-  .download-screen h2 {
+  .splash h2 {
     font-size: 16px;
     font-weight: 600;
     margin: 0;
   }
 
-  .model-name {
+  .splash-model {
     font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .splash-text {
+    font-size: 13px;
     color: var(--text-muted);
     margin: 0;
   }
@@ -185,13 +225,7 @@
     transition: width 0.3s ease;
   }
 
-  .progress-text {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .error-screen {
+  .splash-error {
     color: var(--danger);
   }
 
@@ -199,26 +233,6 @@
     font-size: 32px;
     font-weight: bold;
     margin: 0;
-  }
-
-  .footer {
-    margin-top: var(--space-4);
-    text-align: center;
-  }
-
-  .settings-btn {
-    background: none;
-    border: 1px solid var(--border-strong);
-    color: var(--text-muted);
-    padding: 6px 16px;
-    border-radius: var(--radius);
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .settings-btn:hover {
-    border-color: var(--accent-border);
-    color: var(--text);
   }
 
   .recovery-banner {
@@ -278,5 +292,11 @@
   .dismiss-btn:hover {
     background: var(--surface-raised);
     color: var(--text);
+  }
+
+  .recovery-error {
+    margin: 8px 0 0;
+    color: var(--danger);
+    font-size: 12px;
   }
 </style>

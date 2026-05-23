@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import { createModelStatus } from "$lib/model-status.svelte";
 
   interface ChunkEvent {
     track: string;
@@ -11,12 +12,14 @@
   let isRecording = $state(false);
   let isProcessing = $state(false);
   let statusText = $state("");
-  let lastTranscription = $state("");
   let micTranscript = $state("");
   let sysTranscript = $state("");
   let chunkCount = $state(0);
   let elapsedSeconds = $state(0);
   let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+  const model = createModelStatus();
+  let modelReady = $derived(model.current.kind === "ready");
 
   let hasPartialTranscript = $derived(
     micTranscript.length > 0 || sysTranscript.length > 0,
@@ -54,27 +57,24 @@
   }
 
   onMount(async () => {
-    // Sync state from backend (recording may have started from tray/shortcut)
+    unlisteners.push(await model.subscribe());
+
     try {
       const [status, elapsed] = await invoke<[number, number]>("get_app_status");
       if (status === 1) {
-        // STATUS_RECORDING
         isRecording = true;
         elapsedSeconds = elapsed;
         startTimer();
       } else if (status === 2) {
-        // STATUS_TRANSCRIBING
         isProcessing = true;
-        statusText = "Transcrevendo...";
+        statusText = "Transcribing…";
       }
     } catch {}
 
-    // Recording started (from tray, shortcut, or this window)
     unlisteners.push(
       await listen("recording-started", () => {
         isRecording = true;
         isProcessing = false;
-        lastTranscription = "";
         micTranscript = "";
         sysTranscript = "";
         chunkCount = 0;
@@ -83,11 +83,10 @@
     );
 
     unlisteners.push(
-      await listen<string>("transcription-complete", (event) => {
+      await listen<string>("transcription-complete", () => {
         isRecording = false;
         isProcessing = false;
         stopTimer();
-        lastTranscription = event.payload;
         statusText = "";
         micTranscript = "";
         sysTranscript = "";
@@ -102,13 +101,13 @@
           isRecording = false;
           isProcessing = true;
           stopTimer();
-          statusText = "Processando audio...";
+          statusText = "Processing audio…";
         } else if (p === "transcribing") {
-          statusText = "Transcrevendo...";
+          statusText = "Transcribing…";
         } else if (p === "recovering") {
-          statusText = "Recuperando sessao...";
+          statusText = "Recovering session…";
         } else if (p.startsWith("transcribing")) {
-          statusText = "Transcrevendo trecho...";
+          statusText = "Transcribing chunk…";
         }
       }),
     );
@@ -137,86 +136,101 @@
 
   async function toggleRecording() {
     if (isProcessing) return;
+    if (!modelReady) return;
 
     if (isRecording) {
-      // Immediate UI feedback while backend processes
       isRecording = false;
       stopTimer();
       isProcessing = true;
-      statusText = "Parando...";
+      statusText = "Stopping…";
       try {
         await invoke<string>("stop_recording");
       } catch (e) {
-        statusText = `Erro: ${e}`;
+        statusText = `Error: ${e}`;
         isProcessing = false;
       }
-      // Final state set by transcription-complete event
     } else {
       try {
         await invoke("start_recording");
       } catch (e) {
-        statusText = `Erro: ${e}`;
+        statusText = `Error: ${e}`;
       }
-      // UI state set by recording-started event
     }
   }
 </script>
 
 <div class="recording-view">
-  <button
-    class="record-btn"
-    class:recording={isRecording}
-    class:processing={isProcessing}
-    disabled={isProcessing}
-    onclick={toggleRecording}
-  >
-    <span class="record-icon" class:pulse={isRecording}></span>
-  </button>
+  {#if model.current.kind === "downloading"}
+    <div class="splash">
+      <h3>Downloading Whisper model</h3>
+      <p class="splash-model">ggml-large-v3-turbo-q5_0 (~547 MB)</p>
+      <div class="progress-bar">
+        <div
+          class="progress-fill"
+          style="width: {model.current.progress * 100}%"
+        ></div>
+      </div>
+      <p class="splash-text">{Math.round(model.current.progress * 100)}%</p>
+    </div>
+  {:else if model.current.kind === "error"}
+    <div class="splash splash-error">
+      <p class="error-icon">!</p>
+      <p>{model.current.message}</p>
+    </div>
+  {:else if model.current.kind === "unchecked"}
+    <div class="splash">
+      <p>Loading model…</p>
+    </div>
+  {:else}
+    <button
+      class="record-btn"
+      class:recording={isRecording}
+      class:processing={isProcessing}
+      disabled={isProcessing}
+      aria-label={isRecording ? "Stop recording" : "Start recording"}
+      onclick={toggleRecording}
+    >
+      <span class="record-icon" class:pulse={isRecording}></span>
+    </button>
 
-  {#if isRecording}
-    <p class="timer">{formatTime(elapsedSeconds)}</p>
-  {/if}
-
-  <p class="status">
     {#if isRecording}
-      Gravando <span class="hint">(Cmd+Shift+R para parar)</span>
-    {:else if isProcessing}
-      {statusText}
-    {:else}
-      Clique ou Cmd+Shift+R para gravar
+      <p class="timer">{formatTime(elapsedSeconds)}</p>
     {/if}
-  </p>
 
-  {#if isRecording && hasPartialTranscript}
-    <div class="partial-transcript">
-      <h3>
-        Transcricao parcial ({chunkCount}
-        {chunkCount === 1 ? "trecho" : "trechos"})
-      </h3>
-      {#if hasBothTracks}
-        {#if micTranscript}
-          <div class="track-section">
-            <span class="track-label mic">Eu</span>
-            <p>{micTranscript}</p>
-          </div>
-        {/if}
-        {#if sysTranscript}
-          <div class="track-section">
-            <span class="track-label sys">Participante</span>
-            <p>{sysTranscript}</p>
-          </div>
-        {/if}
+    <p class="status">
+      {#if isRecording}
+        Recording <span class="hint">(⌘⇧R to stop)</span>
+      {:else if isProcessing}
+        {statusText}
       {:else}
-        <p>{micTranscript || sysTranscript}</p>
+        Click or press ⌘⇧R to record
       {/if}
-    </div>
-  {/if}
+    </p>
 
-  {#if lastTranscription}
-    <div class="last-transcription">
-      <h3>Ultima transcricao</h3>
-      <p>{lastTranscription}</p>
-    </div>
+    {#if isRecording && hasPartialTranscript}
+      <div class="partial-transcript">
+        <h3>
+          Live transcript ({chunkCount}
+          {chunkCount === 1 ? "chunk" : "chunks"})
+        </h3>
+        {#if hasBothTracks}
+          {#if micTranscript}
+            <div class="track-section">
+              <span class="track-label">You</span>
+              <p>{micTranscript}</p>
+            </div>
+          {/if}
+          {#if sysTranscript}
+            <div class="track-section">
+              <span class="track-label">Other</span>
+              <p>{sysTranscript}</p>
+            </div>
+          {/if}
+        {:else}
+          <p>{micTranscript || sysTranscript}</p>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -225,7 +239,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 24px 0;
+    padding: var(--space-5) var(--space-4);
+    min-height: 100vh;
+    box-sizing: border-box;
   }
 
   .record-btn {
@@ -290,7 +306,7 @@
     margin: 12px 0 0 0;
     font-variant-numeric: tabular-nums;
     letter-spacing: 1px;
-    font-family: "SF Mono", "Menlo", "Monaco", monospace;
+    font-family: var(--font-mono);
   }
 
   .status {
@@ -313,7 +329,7 @@
     border: 1px solid var(--accent-border);
     border-radius: var(--radius-lg);
     box-sizing: border-box;
-    max-height: 300px;
+    max-height: 180px;
     overflow-y: auto;
   }
 
@@ -353,28 +369,58 @@
     color: var(--text-muted);
   }
 
-  .last-transcription {
-    margin-top: 20px;
+  .splash {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 12px;
     width: 100%;
-    padding: 12px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-sizing: border-box;
   }
 
-  .last-transcription h3 {
+  .splash h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .splash-model {
     font-size: 12px;
     color: var(--text-muted);
-    margin: 0 0 8px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    margin: 0;
   }
 
-  .last-transcription p {
-    font-size: 14px;
-    line-height: 1.5;
+  .splash-text {
+    font-size: 13px;
+    color: var(--text-muted);
     margin: 0;
-    color: var(--text);
+  }
+
+  .splash-error {
+    color: var(--danger);
+    text-align: center;
+  }
+
+  .error-icon {
+    font-size: 32px;
+    font-weight: bold;
+    margin: 0;
+  }
+
+  .progress-bar {
+    width: 100%;
+    max-width: 280px;
+    height: 6px;
+    background: var(--surface-raised);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
   }
 </style>
