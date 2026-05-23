@@ -9,7 +9,10 @@
 //! whichever policy `main` set, so summoning a recording popover from
 //! the tray never hijacks macOS focus.
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Manager, PhysicalPosition, Position, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 
 pub const MAIN: &str = "main";
 pub const RECORDING: &str = "recording";
@@ -20,8 +23,8 @@ const MAIN_H: f64 = 600.0;
 const MAIN_MIN_W: f64 = 700.0;
 const MAIN_MIN_H: f64 = 450.0;
 
-const RECORDING_W: f64 = 300.0;
-const RECORDING_H: f64 = 80.0;
+const RECORDING_W: f64 = 240.0;
+const RECORDING_H: f64 = 52.0;
 
 const SETTINGS_W: f64 = 840.0;
 const SETTINGS_H: f64 = 600.0;
@@ -54,7 +57,6 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)
-        .center()
         .build()?;
 
     let _settings = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("/settings".into()))
@@ -118,8 +120,33 @@ pub fn toggle_main(app: &AppHandle) {
     }
 }
 
+/// Anchor the pill to the top-right of the active monitor, just
+/// below the macOS menu bar where the tray icon lives. Called from
+/// `show_recording` on every show so the popover never drifts away
+/// from the tray icon between sessions.
+fn position_recording_top_right(w: &WebviewWindow) {
+    let monitor = w
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| w.primary_monitor().ok().flatten());
+    let Some(m) = monitor else { return };
+    let monitor_size = m.size();
+    let monitor_pos = m.position();
+    let Ok(win_size) = w.outer_size() else { return };
+    let scale = m.scale_factor();
+    // Offsets in logical pixels — convert to physical to match the
+    // monitor / window units (cpal returns physical sizes).
+    let right_margin = (12.0 * scale) as i32;
+    let top_margin = (32.0 * scale) as i32;
+    let x = monitor_pos.x + (monitor_size.width as i32) - (win_size.width as i32) - right_margin;
+    let y = monitor_pos.y + top_margin;
+    let _ = w.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+}
+
 pub fn show_recording(app: &AppHandle) {
     if let Some(w) = window(app, RECORDING) {
+        position_recording_top_right(&w);
         let _ = w.show();
         let _ = w.set_focus();
     }

@@ -206,8 +206,11 @@
     </button>
 
     <div class="labels">
-      <p class="primary" class:recording={isRecording}>{primaryLabel}</p>
-      <p class="secondary">{secondaryLabel}</p>
+      <span class="primary" class:recording={isRecording}>{primaryLabel}</span>
+      {#if secondaryLabel}
+        <span class="sep" aria-hidden="true">·</span>
+        <span class="secondary">{secondaryLabel}</span>
+      {/if}
     </div>
 
     {#if model.current.kind === "downloading"}
@@ -241,8 +244,8 @@
   .pill-body {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0 0.7rem 0 0.5rem;
+    gap: 0.55rem;
+    padding: 0 0.7rem 0 0.4rem;
     background: var(--surface);
     border: 1px solid var(--border-strong);
     border-radius: 999px;
@@ -255,8 +258,8 @@
 
   .record-btn {
     appearance: none;
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 2px solid var(--border-strong);
     background: var(--surface-raised);
@@ -290,17 +293,17 @@
   }
 
   .record-icon {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: #ff4444;
     transition: border-radius 120ms ease, width 120ms ease, height 120ms ease;
   }
 
   .record-btn.recording .record-icon {
-    border-radius: 3px;
-    width: 13px;
-    height: 13px;
+    border-radius: 2px;
+    width: 10px;
+    height: 10px;
   }
 
   .pulse {
@@ -321,21 +324,20 @@
     flex: 1;
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1px;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.35rem;
+    overflow: hidden;
+    white-space: nowrap;
   }
 
   .primary {
-    margin: 0;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--text);
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1;
+    flex-shrink: 0;
   }
 
   .primary.recording {
@@ -344,14 +346,19 @@
     letter-spacing: 0.5px;
   }
 
+  .sep {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    flex-shrink: 0;
+  }
+
   .secondary {
-    margin: 0;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
-    line-height: 1.2;
+    line-height: 1;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
   }
 
   .progress-ring {
