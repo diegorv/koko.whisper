@@ -12,6 +12,7 @@
   let isRecording = $state(false);
   let isProcessing = $state(false);
   let statusText = $state("");
+  let startError = $state<string | null>(null);
   let micTranscript = $state("");
   let sysTranscript = $state("");
   let chunkCount = $state(0);
@@ -75,6 +76,7 @@
       await listen("recording-started", () => {
         isRecording = true;
         isProcessing = false;
+        startError = null;
         micTranscript = "";
         sysTranscript = "";
         chunkCount = 0;
@@ -134,6 +136,15 @@
     unlisteners.forEach((fn) => fn());
   });
 
+  async function startRecording() {
+    startError = null;
+    try {
+      await invoke("start_recording");
+    } catch (e) {
+      startError = String(e);
+    }
+  }
+
   async function toggleRecording() {
     if (isProcessing) return;
     if (!modelReady) return;
@@ -150,11 +161,7 @@
         isProcessing = false;
       }
     } else {
-      try {
-        await invoke("start_recording");
-      } catch (e) {
-        statusText = `Error: ${e}`;
-      }
+      await startRecording();
     }
   }
 </script>
@@ -182,6 +189,14 @@
       <p>Loading model…</p>
     </div>
   {:else}
+    {#if startError}
+      <div class="error-strip" role="alert">
+        <p class="error-msg">{startError}</p>
+        <button class="retry-btn" type="button" onclick={startRecording}>
+          Retry
+        </button>
+      </div>
+    {/if}
     <button
       class="record-btn"
       class:recording={isRecording}
@@ -422,5 +437,42 @@
     background: var(--accent);
     border-radius: 3px;
     transition: width 0.3s ease;
+  }
+
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger);
+    padding: 0.45rem 0.7rem;
+    border-radius: var(--radius);
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  .error-msg {
+    margin: 0;
+    flex: 1;
+    word-break: break-word;
+  }
+
+  .retry-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid currentColor;
+    color: inherit;
+    padding: 0.25rem 0.7rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+  }
+
+  .retry-btn:hover {
+    background: var(--danger-bg);
   }
 </style>

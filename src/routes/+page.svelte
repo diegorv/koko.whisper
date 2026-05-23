@@ -6,6 +6,7 @@
   import HistoryList from "$lib/history/HistoryList.svelte";
   import HistoryDetail from "$lib/history/HistoryDetail.svelte";
   import type { TranscriptionEntry } from "$lib/history/types";
+  import { parseLocalTimestamp, relativeTime } from "$lib/history/format";
 
   interface IncompleteSession {
     session_id: string;
@@ -25,12 +26,26 @@
   let recovering = $state(false);
   let recoveryError = $state("");
   let unlisteners: (() => void)[] = [];
+  let now = $state(Date.now());
+  let nowTimer: ReturnType<typeof setInterval> | null = null;
 
   let selected = $derived(
     selectedPath === null
       ? null
       : entries.find((e) => e.path === selectedPath) ?? null,
   );
+
+  let totalLabel = $derived(
+    entries.length === 1 ? "1 transcription" : `${entries.length} transcriptions`,
+  );
+
+  let lastLabel = $derived.by(() => {
+    if (entries.length === 0) return null;
+    const first = entries[0];
+    const ms = parseLocalTimestamp(first.date ?? first.filename.replace(/\.md$/, ""));
+    if (ms === null) return null;
+    return `last ${relativeTime(ms, now)}`;
+  });
 
   async function refreshEntries() {
     try {
@@ -67,10 +82,20 @@
         await Promise.all([refreshEntries(), refreshIncomplete()]);
       }),
     );
+
+    // Refresh the "last Xm ago" status string once a minute so the
+    // status bar does not lie about how recent the newest row is.
+    nowTimer = setInterval(() => {
+      now = Date.now();
+    }, 60_000);
   });
 
   onDestroy(() => {
     unlisteners.forEach((fn) => fn());
+    if (nowTimer !== null) {
+      clearInterval(nowTimer);
+      nowTimer = null;
+    }
   });
 
   async function recoverSession(session: IncompleteSession) {
@@ -125,26 +150,73 @@
     }
   }
 
-  function onWindowKeydown(event: KeyboardEvent) {
-    // ⌘⌫ on the Main window deletes the currently selected entry.
-    // Skipped when the user is typing in a form field so it never
-    // collides with normal text-input delete.
-    if (!(event.metaKey && event.key === "Backspace")) return;
-    const target = event.target as HTMLElement | null;
-    if (
-      target &&
-      (target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable)
-    ) {
+  function isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return true;
+    return target.isContentEditable;
+  }
+
+  let copyFlash = $state<string | null>(null);
+  let copyFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function copySelectedTranscript() {
+    if (selectedPath === null) return;
+    try {
+      const body = await invoke<string>("get_transcription_body", {
+        path: selectedPath,
+      });
+      await navigator.clipboard.writeText(body);
+      copyFlash = selectedPath;
+      if (copyFlashTimer) clearTimeout(copyFlashTimer);
+      copyFlashTimer = setTimeout(() => {
+        copyFlash = null;
+      }, 200);
+    } catch (err) {
+      console.error("copy failed", err);
+    }
+  }
+
+  function moveSelection(delta: 1 | -1) {
+    if (entries.length === 0) return;
+    if (selectedPath === null) {
+      selectedPath = entries[delta === 1 ? 0 : entries.length - 1].path;
       return;
     }
-    if (selectedPath === null) return;
-    event.preventDefault();
-    const path = selectedPath;
-    const ok = confirm("Delete this transcription? This cannot be undone.");
-    if (ok) {
-      void deleteEntry(path);
+    const idx = entries.findIndex((e) => e.path === selectedPath);
+    if (idx === -1) {
+      selectedPath = entries[0].path;
+      return;
+    }
+    const next = idx + delta;
+    if (next < 0 || next >= entries.length) return;
+    selectedPath = entries[next].path;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (isTypingTarget(event.target)) return;
+
+    if (event.metaKey && event.key === "Backspace") {
+      if (selectedPath === null) return;
+      event.preventDefault();
+      const path = selectedPath;
+      const ok = confirm("Delete this transcription? This cannot be undone.");
+      if (ok) void deleteEntry(path);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSelection(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSelection(-1);
+      return;
+    }
+    if (event.key === "Enter" && selectedPath !== null) {
+      event.preventDefault();
+      void copySelectedTranscript();
     }
   }
 </script>
@@ -207,7 +279,7 @@
       </div>
     {/if}
 
-    <div class="panes">
+    <div class="panes" class:has-banner={incompleteSessions.length > 0}>
       <aside class="list-pane">
         {#if listError}
           <div class="list-error">
@@ -223,20 +295,30 @@
             </p>
           </div>
         {:else}
-          <HistoryList {entries} {selectedPath} {onSelect} />
+          <HistoryList {entries} {selectedPath} flashingPath={copyFlash} {onSelect} />
         {/if}
       </aside>
       <section class="detail-pane">
         <HistoryDetail entry={selected} onDelete={deleteEntry} />
       </section>
     </div>
+
+    {#if entries.length > 0}
+      <footer class="statusbar" aria-label="History stats">
+        <span class="stat">{totalLabel}</span>
+        {#if lastLabel}
+          <span class="sep" aria-hidden="true">·</span>
+          <span class="stat">{lastLabel}</span>
+        {/if}
+      </footer>
+    {/if}
   {/if}
 </main>
 
 <style>
   .main {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto 1fr auto;
     height: 100vh;
     width: 100vw;
     box-sizing: border-box;
@@ -250,7 +332,7 @@
     justify-content: center;
     min-height: 60vh;
     gap: 12px;
-    grid-row: 1 / span 2;
+    grid-row: 1 / -1;
   }
 
   .splash h2 {
@@ -437,5 +519,21 @@
 
   .retry-btn:hover {
     background: var(--accent-bg-strong);
+  }
+
+  .statusbar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.85rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface-sunken);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    user-select: none;
+  }
+
+  .statusbar .sep {
+    opacity: 0.5;
   }
 </style>

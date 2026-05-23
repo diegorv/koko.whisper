@@ -41,6 +41,33 @@ function shortDate(s: string): string {
   return s;
 }
 
+// Parse "YYYY-MM-DD HH:MM:SS" (frontmatter format) or the filename
+// stem "YYYY-MM-DD_HH-MM-SS" into epoch ms. Returns null when the
+// input is not in either shape.
+export function parseLocalTimestamp(s: string | null): number | null {
+  if (!s) return null;
+  const cleaned = s.replace("_", " ").replace(/-(\d{2})-(\d{2})$/, ":$1:$2");
+  const iso = cleaned.replace(" ", "T");
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : t;
+}
+
+/// Render an epoch timestamp as a short relative phrase: "just now"
+/// under a minute, "Nm ago" under an hour, "Nh ago" under a day, "Nd
+/// ago" otherwise. Returns null when the input could not be parsed
+/// so callers can hide the row instead of rendering a blank.
+export function relativeTime(ms: number, now: number): string {
+  const diff = Math.max(0, now - ms);
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
 // Split a multi-track body (`## Microphone` / `## System audio`)
 // into labelled chunks. Single-track bodies return a single chunk
 // with `label: null`.

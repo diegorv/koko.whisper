@@ -5,10 +5,11 @@
   interface Props {
     entries: TranscriptionEntry[];
     selectedPath: string | null;
+    flashingPath?: string | null;
     onSelect: (path: string) => void;
   }
 
-  let { entries, selectedPath, onSelect }: Props = $props();
+  let { entries, selectedPath, flashingPath = null, onSelect }: Props = $props();
 </script>
 
 <ul class="list" aria-label="Transcriptions">
@@ -20,6 +21,7 @@
         type="button"
         class="row"
         class:selected={selectedPath === entry.path}
+        class:flash={flashingPath === entry.path}
         aria-pressed={selectedPath === entry.path}
         onclick={() => onSelect(entry.path)}
       >
@@ -67,6 +69,19 @@
   .row.selected {
     background: var(--accent-bg);
     border-color: var(--accent-border);
+  }
+
+  .row.flash {
+    animation: flash-pulse 200ms ease-out;
+  }
+
+  @keyframes flash-pulse {
+    0% {
+      background: var(--accent-bg-strong);
+    }
+    100% {
+      background: var(--accent-bg);
+    }
   }
 
   .row-head {
