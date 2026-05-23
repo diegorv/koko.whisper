@@ -11,9 +11,10 @@
 
   interface Props {
     entry: TranscriptionEntry | null;
+    onDelete?: (path: string) => void;
   }
 
-  let { entry }: Props = $props();
+  let { entry, onDelete }: Props = $props();
 
   let body = $state<string | null>(null);
   let loading = $state(false);
@@ -73,6 +74,16 @@
       console.error("revealItemInDir failed", e);
     }
   }
+
+  function requestDelete() {
+    if (!entry) return;
+    const ok = confirm(
+      "Delete this transcription? This cannot be undone.",
+    );
+    if (ok) {
+      onDelete?.(entry.path);
+    }
+  }
 </script>
 
 {#if entry === null}
@@ -108,7 +119,12 @@
         <button type="button" class="btn" onclick={reveal}>
           Reveal in Finder
         </button>
-        <button type="button" class="btn delete" disabled title="Coming in ui-04">
+        <button
+          type="button"
+          class="btn delete"
+          onclick={requestDelete}
+          disabled={!onDelete}
+        >
           Delete
         </button>
       </div>

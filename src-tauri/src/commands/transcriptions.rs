@@ -148,6 +148,29 @@ pub async fn get_transcriptions(
     Ok(entries)
 }
 
+/// Pure. Validate a transcription file path against the configured
+/// output folder root. Returns the canonical target path on success,
+/// a human-readable error string on rejection. Centralised so the
+/// `get_transcription_body` and `delete_transcription` paths apply
+/// the same rules — extension must be `.md`, canonical path must
+/// resolve inside the folder root.
+fn validate_transcription_path(
+    path: &str,
+    output_folder: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let target = std::path::PathBuf::from(path);
+
+    if target.extension().map_or(true, |ext| ext != "md") {
+        return Err("Path must be a .md file".to_string());
+    }
+    let canonical = std::fs::canonicalize(&target).map_err(|e| e.to_string())?;
+    let folder_canonical = std::fs::canonicalize(output_folder).map_err(|e| e.to_string())?;
+    if !canonical.starts_with(&folder_canonical) {
+        return Err("Path is outside the transcription folder".to_string());
+    }
+    Ok(canonical)
+}
+
 /// Returns the full body of a single transcription file. Path is
 /// validated to live inside the configured output folder and to end
 /// in `.md` so the command cannot be used as an arbitrary file
@@ -158,20 +181,27 @@ pub async fn get_transcription_body(
     path: String,
 ) -> Result<String, String> {
     let output_folder = state.output_folder.lock().await.clone();
-    let target = std::path::PathBuf::from(&path);
-
-    if target.extension().map_or(true, |ext| ext != "md") {
-        return Err("Path must be a .md file".to_string());
-    }
-    let canonical = std::fs::canonicalize(&target).map_err(|e| e.to_string())?;
-    let folder_canonical = std::fs::canonicalize(&output_folder).map_err(|e| e.to_string())?;
-    if !canonical.starts_with(&folder_canonical) {
-        return Err("Path is outside the transcription folder".to_string());
-    }
+    let canonical = validate_transcription_path(&path, &output_folder)?;
 
     let content = std::fs::read_to_string(&canonical).map_err(|e| e.to_string())?;
     let (_frontmatter, body) = split_frontmatter(&content);
     Ok(body.trim_start().to_string())
+}
+
+/// Permanently delete a transcription `.md` from the output folder.
+/// The path is canonicalised and validated to live inside the
+/// configured folder so the command cannot be used to remove
+/// arbitrary files. Returns the canonicalised path on success.
+#[tauri::command]
+pub async fn delete_transcription(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    let output_folder = state.output_folder.lock().await.clone();
+    let canonical = validate_transcription_path(&path, &output_folder)?;
+
+    std::fs::remove_file(&canonical).map_err(|e| e.to_string())?;
+    Ok(canonical.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
@@ -268,5 +298,61 @@ mod tests {
         let body = "á".repeat(60);
         let preview = extract_preview(&body);
         assert_eq!(preview.chars().count(), 60);
+    }
+
+    fn validation_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "koko_whisper_validation_{}_{}",
+            name,
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn validate_transcription_path_accepts_md_under_folder() {
+        let folder = validation_dir("accept");
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("2026-05-22_16-00-00.md");
+        std::fs::write(&file, "stub").unwrap();
+
+        let result = validate_transcription_path(file.to_str().unwrap(), &folder);
+        assert!(result.is_ok());
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn validate_transcription_path_rejects_non_md_extension() {
+        let folder = validation_dir("ext");
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("notes.txt");
+        std::fs::write(&file, "stub").unwrap();
+
+        let err = validate_transcription_path(file.to_str().unwrap(), &folder)
+            .expect_err("non-.md path must be rejected");
+        assert!(err.contains(".md"));
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn validate_transcription_path_rejects_path_outside_folder() {
+        let folder = validation_dir("outside_folder");
+        let other = validation_dir("outside_other");
+        let _ = std::fs::remove_dir_all(&folder);
+        let _ = std::fs::remove_dir_all(&other);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let file = other.join("rogue.md");
+        std::fs::write(&file, "stub").unwrap();
+
+        let err = validate_transcription_path(file.to_str().unwrap(), &folder)
+            .expect_err("path outside folder must be rejected");
+        assert!(err.contains("outside"));
+
+        std::fs::remove_dir_all(&folder).unwrap();
+        std::fs::remove_dir_all(&other).unwrap();
     }
 }

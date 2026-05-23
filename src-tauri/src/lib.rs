@@ -30,6 +30,7 @@ pub fn run() {
             commands::recording::stop_recording,
             commands::transcriptions::get_transcriptions,
             commands::transcriptions::get_transcription_body,
+            commands::transcriptions::delete_transcription,
             commands::settings::set_output_folder,
             commands::settings::list_audio_devices,
             commands::settings::set_mic_device,

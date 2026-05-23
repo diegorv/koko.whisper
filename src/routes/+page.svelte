@@ -101,7 +101,55 @@
   function onSelect(path: string) {
     selectedPath = path;
   }
+
+  function neighborPath(path: string): string | null {
+    const idx = entries.findIndex((e) => e.path === path);
+    if (idx === -1) return null;
+    return entries[idx + 1]?.path ?? entries[idx - 1]?.path ?? null;
+  }
+
+  async function deleteEntry(path: string) {
+    const next = neighborPath(path);
+    // Optimistic local removal so the row vanishes immediately even
+    // if the IPC takes a moment to complete.
+    entries = entries.filter((e) => e.path !== path);
+    if (selectedPath === path) {
+      selectedPath = next;
+    }
+    try {
+      await invoke("delete_transcription", { path });
+    } catch (e) {
+      listError = `Delete failed: ${e}`;
+      // Refresh from disk so we don't lie about which rows are gone.
+      await refreshEntries();
+    }
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    // ⌘⌫ on the Main window deletes the currently selected entry.
+    // Skipped when the user is typing in a form field so it never
+    // collides with normal text-input delete.
+    if (!(event.metaKey && event.key === "Backspace")) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+    if (selectedPath === null) return;
+    event.preventDefault();
+    const path = selectedPath;
+    const ok = confirm("Delete this transcription? This cannot be undone.");
+    if (ok) {
+      void deleteEntry(path);
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <main class="main">
   {#if model.current.kind === "downloading"}
@@ -179,7 +227,7 @@
         {/if}
       </aside>
       <section class="detail-pane">
-        <HistoryDetail entry={selected} />
+        <HistoryDetail entry={selected} onDelete={deleteEntry} />
       </section>
     </div>
   {/if}
