@@ -97,7 +97,7 @@ pub async fn recover_session(
 
             let text = {
                 let ctx_guard = state.whisper_context.lock().await;
-                let ctx = ctx_guard.as_ref().ok_or("Whisper nao inicializado")?;
+                let ctx = ctx_guard.as_ref().ok_or("Whisper not initialized")?;
                 crate::transcription::transcribe(ctx, &audio_data).map_err(|e| e.to_string())?
             };
 

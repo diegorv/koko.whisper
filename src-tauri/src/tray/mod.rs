@@ -80,10 +80,10 @@ fn build_status_text(info: &TrayInfo) -> String {
                 .elapsed
                 .map(format_elapsed)
                 .unwrap_or_else(|| "00:00".to_string());
-            format!("● Gravando...  {}", timer)
+            format!("● Recording  {}", timer)
         }
-        STATUS_TRANSCRIBING => "Transcrevendo...".to_string(),
-        _ => "Parado".to_string(),
+        STATUS_TRANSCRIBING => "Transcribing...".to_string(),
+        _ => "Idle".to_string(),
     }
 }
 
@@ -92,9 +92,9 @@ fn build_status_text(info: &TrayInfo) -> String {
 /// recording while whisper-rs is consuming the previous one.
 fn build_toggle(status: u8) -> (String, bool) {
     match status {
-        STATUS_RECORDING => ("Parar Gravacao (Cmd+Shift+R)".to_string(), true),
-        STATUS_TRANSCRIBING => ("Aguarde...".to_string(), false),
-        _ => ("Iniciar Gravacao (Cmd+Shift+R)".to_string(), true),
+        STATUS_RECORDING => ("Stop Recording".to_string(), true),
+        STATUS_TRANSCRIBING => ("Please wait…".to_string(), false),
+        _ => ("Start Recording".to_string(), true),
     }
 }
 
@@ -115,8 +115,8 @@ fn build_tray_title(info: &TrayInfo) -> Option<String> {
 /// Pure. The hover tooltip on the tray icon.
 fn build_tray_tooltip(status: u8) -> &'static str {
     match status {
-        STATUS_RECORDING => "Koko Notes Whisper - Gravando...",
-        STATUS_TRANSCRIBING => "Koko Notes Whisper - Transcrevendo...",
+        STATUS_RECORDING => "Koko Notes Whisper — Recording",
+        STATUS_TRANSCRIBING => "Koko Notes Whisper — Transcribing",
         _ => "Koko Notes Whisper",
     }
 }
@@ -132,12 +132,12 @@ fn build_menu(app: &AppHandle, info: &TrayInfo) -> anyhow::Result<Menu<Wry>> {
         "toggle_recording",
         &toggle_label,
         toggle_enabled,
-        None::<&str>,
+        Some("CmdOrCtrl+Shift+R"),
     )?;
     let mic = CheckMenuItem::with_id(
         app,
         "toggle_mic",
-        "Microfone",
+        "Microphone",
         true,
         info.mic_enabled,
         None::<&str>,
@@ -145,22 +145,46 @@ fn build_menu(app: &AppHandle, info: &TrayInfo) -> anyhow::Result<Menu<Wry>> {
     let sys = CheckMenuItem::with_id(
         app,
         "toggle_sys",
-        "Audio do Sistema",
+        "System audio",
         true,
         info.sys_enabled,
         None::<&str>,
     )?;
-    let show = MenuItem::with_id(app, "show_window", "Ver Transcricoes", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+    let show_history = MenuItem::with_id(
+        app,
+        "show_main",
+        "Show History",
+        true,
+        Some("CmdOrCtrl+Shift+H"),
+    )?;
+    let settings_item = MenuItem::with_id(
+        app,
+        "show_settings",
+        "Settings…",
+        true,
+        Some("CmdOrCtrl+,"),
+    )?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, Some("CmdOrCtrl+Q"))?;
 
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
+    let sep4 = PredefinedMenuItem::separator(app)?;
 
     let menu = Menu::with_items(
         app,
         &[
-            &status, &sep1, &toggle, &sep2, &mic, &sys, &sep3, &show, &quit,
+            &status,
+            &sep1,
+            &toggle,
+            &sep2,
+            &mic,
+            &sys,
+            &sep3,
+            &show_history,
+            &settings_item,
+            &sep4,
+            &quit,
         ],
     )?;
 
@@ -184,8 +208,11 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             toggle_track_enabled(app, TrackName::System);
             update_tray_menu(app);
         }
-        "show_window" => {
-            show_panel(app);
+        "show_main" => {
+            crate::windows::show_main(app);
+        }
+        "show_settings" => {
+            crate::windows::show_settings(app);
         }
         "quit" => {
             app.exit(0);
@@ -258,23 +285,6 @@ fn apply_tray_decorations(tray: &tauri::tray::TrayIcon, info: &TrayInfo) {
     let _ = tray.set_tooltip(Some(build_tray_tooltip(info.status)));
 }
 
-fn show_panel(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    } else {
-        let _ = tauri::WebviewWindowBuilder::new(
-            app,
-            "main",
-            tauri::WebviewUrl::App("index.html".into()),
-        )
-        .title("Koko Notes Whisper")
-        .inner_size(400.0, 520.0)
-        .resizable(false)
-        .build();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,14 +328,14 @@ mod tests {
     }
 
     #[test]
-    fn build_status_text_idle_says_parado() {
-        assert_eq!(build_status_text(&info(STATUS_IDLE, None)), "Parado");
+    fn build_status_text_idle_says_idle() {
+        assert_eq!(build_status_text(&info(STATUS_IDLE, None)), "Idle");
     }
 
     #[test]
     fn build_status_text_recording_with_timer_renders_dot_and_elapsed() {
         let s = build_status_text(&info(STATUS_RECORDING, Some(Duration::from_secs(65))));
-        assert_eq!(s, "● Gravando...  01:05");
+        assert_eq!(s, "● Recording  01:05");
     }
 
     #[test]
@@ -334,37 +344,37 @@ mod tests {
         // start of a recording. Show 00:00 rather than collapsing the
         // status row.
         let s = build_status_text(&info(STATUS_RECORDING, None));
-        assert_eq!(s, "● Gravando...  00:00");
+        assert_eq!(s, "● Recording  00:00");
     }
 
     #[test]
-    fn build_status_text_transcribing_says_transcrevendo() {
+    fn build_status_text_transcribing_says_transcribing() {
         assert_eq!(
             build_status_text(&info(STATUS_TRANSCRIBING, None)),
-            "Transcrevendo..."
+            "Transcribing..."
         );
     }
 
     #[test]
-    fn build_toggle_idle_returns_iniciar_label_enabled() {
+    fn build_toggle_idle_returns_start_label_enabled() {
         let (label, enabled) = build_toggle(STATUS_IDLE);
-        assert_eq!(label, "Iniciar Gravacao (Cmd+Shift+R)");
+        assert_eq!(label, "Start Recording");
         assert!(enabled);
     }
 
     #[test]
-    fn build_toggle_recording_returns_parar_label_enabled() {
+    fn build_toggle_recording_returns_stop_label_enabled() {
         let (label, enabled) = build_toggle(STATUS_RECORDING);
-        assert_eq!(label, "Parar Gravacao (Cmd+Shift+R)");
+        assert_eq!(label, "Stop Recording");
         assert!(enabled);
     }
 
     #[test]
-    fn build_toggle_transcribing_returns_aguarde_label_disabled() {
+    fn build_toggle_transcribing_returns_wait_label_disabled() {
         // Disabled mid-transcription: user cannot start/stop recording
         // while whisper-rs is busy on the previous capture.
         let (label, enabled) = build_toggle(STATUS_TRANSCRIBING);
-        assert_eq!(label, "Aguarde...");
+        assert_eq!(label, "Please wait…");
         assert!(!enabled);
     }
 
@@ -396,11 +406,11 @@ mod tests {
         assert_eq!(build_tray_tooltip(STATUS_IDLE), "Koko Notes Whisper");
         assert_eq!(
             build_tray_tooltip(STATUS_RECORDING),
-            "Koko Notes Whisper - Gravando..."
+            "Koko Notes Whisper — Recording"
         );
         assert_eq!(
             build_tray_tooltip(STATUS_TRANSCRIBING),
-            "Koko Notes Whisper - Transcrevendo..."
+            "Koko Notes Whisper — Transcribing"
         );
     }
 }

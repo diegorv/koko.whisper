@@ -69,7 +69,7 @@ pub(super) fn save_markdown(output_folder: &PathBuf, transcript: &str) -> anyhow
     let file_path = output_folder.join(&filename);
 
     let content = format!(
-        "# Transcricao de Voz\n\n**Data:** {}\n**Idioma:** Portugues (BR)\n\n---\n\n{}\n",
+        "# Voice transcription\n\n**Date:** {}\n**Language:** Portuguese (BR)\n\n---\n\n{}\n",
         now.format("%Y-%m-%d %H:%M:%S"),
         transcript
     );
@@ -167,6 +167,11 @@ pub async fn start_recording_impl(app: &AppHandle) -> Result<(), String> {
     *state.recording_started_at.lock().unwrap() = Some(std::time::Instant::now());
     crate::tray::update_tray_menu(app);
 
+    // The recording popover is the active-session surface. Show it
+    // so the user sees the timer + partial transcripts immediately,
+    // even when the session was kicked off from the tray or shortcut.
+    crate::windows::show_recording(app);
+
     // Notify frontend (if window is open) so it can sync UI
     let _ = app.emit("recording-started", ());
 
@@ -236,7 +241,8 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
     if full_transcript.is_empty() {
         state.app_status.store(STATUS_IDLE, Ordering::Relaxed);
         crate::tray::update_tray_menu(app);
-        return Err("Nenhum audio gravado".to_string());
+        crate::windows::hide_recording(app);
+        return Err("No audio recorded".to_string());
     }
 
     // Mark session as completed
@@ -255,6 +261,12 @@ pub async fn stop_recording_impl(app: &AppHandle) -> Result<String, String> {
     copy_to_clipboard(&full_transcript);
 
     let _ = app.emit("transcription-complete", &full_transcript);
+
+    // Auto-hide the recording popover when the session wraps up and
+    // show the Main window so the user sees the new entry in the
+    // history pane without an extra click.
+    crate::windows::hide_recording(app);
+    crate::windows::show_main(app);
 
     state.app_status.store(STATUS_IDLE, Ordering::Relaxed);
     crate::tray::update_tray_menu(app);

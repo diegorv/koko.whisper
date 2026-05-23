@@ -66,7 +66,7 @@ mod tests {
         // The markdown produced by `recording::save_markdown` has a
         // header block above a `---` separator; preview should be the
         // body below it, not the frontmatter.
-        let md = "# Transcricao de Voz\n\n**Data:** 2026-05-22 16:08:26\n**Idioma:** Portugues (BR)\n\n---\n\nHello world\n";
+        let md = "# Voice transcription\n\n**Date:** 2026-05-22 16:08:26\n**Language:** Portuguese (BR)\n\n---\n\nHello world\n";
         assert_eq!(extract_preview(md), "Hello world");
     }
 
