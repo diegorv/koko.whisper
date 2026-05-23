@@ -7,6 +7,7 @@ pub mod recording;
 pub mod session;
 pub mod settings;
 pub mod transcriptions;
+pub mod windows;
 
 // `toggle_recording_impl` is invoked from `tray::handle_menu_event` and
 // `shortcuts::register` via `crate::commands::toggle_recording_impl(...)`,

@@ -1,37 +1,22 @@
-//! Whisper model lifecycle Tauri commands. Thin glue over `model/`
-//! and `transcription/` — checks whether the ggml file is on disk,
-//! downloads it with progress events, and instantiates a
-//! `WhisperContext` into `AppState`.
+//! Whisper model lifecycle Tauri commands. The boot sequence
+//! (`check → download → init`) runs in Rust `setup()` (see
+//! `crate::boot`); the frontend just reads the current snapshot via
+//! `get_model_status` and subscribes to the `model-status` event for
+//! transitions.
 //!
-//! Per ADR-0001 these are smoke-only — each command is a few lines of
-//! delegation over modules whose pure cores are already tested in
+//! Per ADR-0001 these are smoke-only — the pure cores live under
 //! `model::tests` and `transcription::tests`.
 
-use crate::state::AppState;
-use tauri::{AppHandle, Emitter, State};
+use crate::state::{AppState, ModelStatus};
+use tauri::State;
 
+/// Returns the current snapshot of the Whisper model boot lifecycle.
+/// Each window calls this from its `onMount` before subscribing to
+/// the `model-status` event so a window opened after the boot task
+/// completed still sees `Ready` (events fired before the listener
+/// was attached are otherwise lost).
 #[tauri::command]
-pub async fn check_model_status() -> Result<bool, String> {
-    Ok(crate::model::is_model_downloaded())
-}
-
-#[tauri::command]
-pub async fn download_model(app: AppHandle) -> Result<(), String> {
-    let app_clone = app.clone();
-    crate::model::download_model(move |progress| {
-        let _ = app_clone.emit("model-download-progress", progress);
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn initialize_whisper(state: State<'_, AppState>) -> Result<(), String> {
-    let model_path = crate::model::get_model_path().map_err(|e| e.to_string())?;
-    let ctx =
-        crate::transcription::create_whisper_context(&model_path).map_err(|e| e.to_string())?;
-    let mut guard = state.whisper_context.lock().await;
-    *guard = Some(ctx);
-    Ok(())
+pub async fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
+    let guard = state.model_status.lock().await;
+    Ok(guard.clone())
 }
