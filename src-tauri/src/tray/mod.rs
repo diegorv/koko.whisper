@@ -281,7 +281,12 @@ pub fn update_tray_title(app: &AppHandle) {
 }
 
 fn apply_tray_decorations(tray: &tauri::tray::TrayIcon, info: &TrayInfo) {
-    let _ = tray.set_title(build_tray_title(info).as_deref());
+    // macOS NSStatusItem ignores `set_title(None)` once a title has
+    // been set during the session — the "Transcribing..." ellipsis
+    // stuck around even after the status flipped back to IDLE.
+    // Passing an explicit empty string forces the title to clear.
+    let title = build_tray_title(info).unwrap_or_default();
+    let _ = tray.set_title(Some(title.as_str()));
     let _ = tray.set_tooltip(Some(build_tray_tooltip(info.status)));
 }
 
