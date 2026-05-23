@@ -2,6 +2,7 @@ mod audio;
 mod boot;
 mod commands;
 mod config;
+mod icons;
 mod model;
 mod pipeline;
 mod session;
@@ -73,6 +74,12 @@ pub fn run() {
             windows::init_activation_policy(app.handle());
 
             tray::setup_tray(app.handle())?;
+
+            // Replace the bundled placeholder icon with our rasterised
+            // dock badge so Cmd+Tab / the macOS Dock carries the same
+            // family identity as the rest of the app while running.
+            // No-op on non-macOS.
+            icons::apply_dock_icon();
 
             // Register global keyboard shortcuts:
             //   Cmd+Shift+R  toggle recording

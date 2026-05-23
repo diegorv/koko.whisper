@@ -18,6 +18,15 @@ pub fn setup_tray(app: &AppHandle) -> anyhow::Result<()> {
         let info = read_state(app);
         let menu = build_menu(app, &info)?;
         tray.set_menu(Some(menu))?;
+
+        // Replace the bundled placeholder PNG with our rasterised
+        // Lucide `mic` glyph so the menubar carries the same family
+        // identity as the rest of the app. `set_icon_as_template`
+        // tells macOS to recolour the alpha channel per appearance.
+        let (rgba, w, h) = crate::icons::build_tray_icon_rgba();
+        let icon = tauri::image::Image::new_owned(rgba, w, h);
+        let _ = tray.set_icon(Some(icon));
+        let _ = tray.set_icon_as_template(true);
     }
     Ok(())
 }
